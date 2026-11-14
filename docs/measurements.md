@@ -48,3 +48,12 @@ tape measure yet.
 - Once, all motors ignored commands (target speeds reached the motors, actual speed and effort ~0, no
   error code); it was a robot-side issue fixed on site.
 - `/api/current_mode` must show `meta_mode: 1` (API) and `enable_chassis: true`.
+
+## Arms (2026-11-14)
+
+- Arms must be in joint control mode for `/api/{arm}_arm/joint_cmd`; in end-effector mode the topic does
+  not exist on the robot side (only `/api/{arm}_arm/target_pose` is subscribed). The mode change needs
+  Save config -> Apply -> reboot; until then `/api/current_mode` keeps reporting 0.
+- `arm/arm.sh raise` from the hanging pose (joint2 about +/-1.57) to the zero.py pose: FSM PAUSE -> READY
+  while holding, 8 s min-jerk move, max error to target 0.011 rad.
+- After `fsm/enable 0.0` (PAUSE) the arms held the raised pose: no measurable sag over 5 s.
