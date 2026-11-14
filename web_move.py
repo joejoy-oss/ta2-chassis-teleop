@@ -17,6 +17,10 @@ the browser). Run follows one path from the current pose; Run all follows them i
 each starting where the previous one ended. At every corner of a path (turn > 45 deg) the robot
 stands still for CORNER_PAUSE seconds. A path stops if the page stops polling for 1 s.
 
+Arms: "Raise arms" / "Lower arms" run arm/arm_pose.py (standalone, /outputs/arm/ in the container)
+as a separate process; its output goes to the log. Arms and chassis never move at the same time.
+STOP also interrupts the arm script, which then holds where it is and pauses the FSM.
+
 Motion is done by teleop.py, a long-running ROS node inside the openpi-xpu-client
 container, fed over stdin. If this server exits, teleop.py sees EOF, sends zero and exits.
 """
@@ -40,6 +44,10 @@ DIRS = ("forward", "back", "left", "right", "ccw", "cw")
 TRAIL_DIR = os.environ.get("TRAIL_DIR", "/root/ta2_trails")
 PATH_DIR = os.environ.get("PATH_DIR", "/root/ta2_paths")
 CORNER_PAUSE = float(os.environ.get("CORNER_PAUSE", "10"))   # seconds to stand still at each corner
+ARM_CMD = os.environ.get("ARM_CMD", f"docker exec {CONTAINER} /usr/local/bin/openpi-client-entrypoint.sh "
+                                    "python3 -u /outputs/arm/arm_pose.py").split()
+ARM_STOP = os.environ.get("ARM_STOP", f"docker exec {CONTAINER} pkill -INT -f arm_pose.py").split()
+ARM_TIME = {"raise": 8, "lower": 15}    # seconds; lower is slower on purpose
 paths = {}                  # name -> {"points": [[x, y, th], ...], "length": m, "end": [dx, dy]}
 seq = {"names": [], "i": -1, "abort": False}
 path_done = threading.Event()
@@ -48,7 +56,8 @@ last_poll = [0.0]
 
 state = {"connected": False, "moving": None, "mode_ok": None, "last": "starting", "clicks": 0, "holds": 0,
          "pose": [0.0, 0.0, 0.0], "epoch": int(time.time()),    # epoch changes on restart and on trail reset
-         "recording": False, "rec_t0": None, "active_path": None, "path_anchor": [0.0, 0.0, 0.0]}
+         "recording": False, "rec_t0": None, "active_path": None, "path_anchor": [0.0, 0.0, 0.0],
+         "arm": None, "arm_last": "arms: not moved yet"}
 trail = []                  # [[x, y, th, t], ...]; metres / rad / s; x = right, y = forward of the origin
 TRAIL_MAX = 20000
 log = collections.deque(maxlen=60)
@@ -117,6 +126,26 @@ def run_sequence(names):
     else:
         note("run all: finished")
     seq.update(names=[], i=-1)
+
+
+def run_arm(action):
+    try:
+        ensure_container()
+        p = subprocess.Popen(ARM_CMD + [action, "--time", str(ARM_TIME[action])], stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True)
+        last = ""
+        for line in p.stdout:
+            line = line.rstrip()
+            if line and "multicast" not in line and not line.startswith("Current mode"):
+                note("arm: " + line)
+                last = line
+        rc = p.wait()
+        state["arm_last"] = f"arms {action}: " + ("done" if rc == 0 else f"stopped ({last})")
+    except Exception as e:  # noqa: BLE001
+        state["arm_last"] = f"arms {action}: error {e}"
+        note(state["arm_last"])
+    finally:
+        state["arm"] = None
 
 
 def alive_loop():
@@ -294,12 +323,16 @@ canvas{position:absolute;inset:0;width:100%;height:100%}
     <span></span><button data-d="back">Back</button><span></span>
   </div>
   <div class="rot"><button data-d="ccw">&#10226; CCW</button><button data-d="cw">CW &#10227;</button></div>
+  <div class="panel"><h2><span>Arms</span><span class="tools">
+    <button class="small" id="armraise">Raise arms</button><button class="small" id="armlower">Lower arms (slowly)</button></span></h2>
+    <div class="muted" id="armst" style="padding:6px 12px">arms: idle</div>
+  </div>
   <div class="panel paths"><h2><span>Paths</span><span class="tools">
     <button class="small" id="load">Load files</button><button class="small" id="runall">Run all in order</button></span></h2>
     <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
     <div class="plist" id="plist"><div class="prow muted">No paths loaded</div></div>
   </div>
-  <div class="muted">Paths stop for 10 s at every corner. Click: move 10 cm / turn 15&deg; in place. Press and hold: keeps moving at 0.05 m/s (turning at 11.5&deg;/s) until you let go, max 10 s per hold. Keep someone at the e-stop.</div>
+  <div class="muted">Arms: raise takes 8 s, lower 15 s (back to the pose saved before raising); arms need joint control mode. Paths stop for 10 s at every corner. Click: move 10 cm / turn 15&deg; in place. Press and hold: keeps moving at 0.05 m/s (turning at 11.5&deg;/s) until you let go, max 10 s per hold. Keep someone at the e-stop.</div>
 </div>
 <div class="right">
   <div class="panel"><h2>Log</h2><pre id="log"></pre></div>
@@ -372,6 +405,9 @@ fileIn.onchange=async()=>{
     if(r.error)st.textContent=f.name+': '+r.error}
   fileIn.value='';loadPaths();
 };
+const armRaise=document.getElementById('armraise'),armLower=document.getElementById('armlower'),armSt=document.getElementById('armst');
+armRaise.onclick=async()=>{const r=await post('/arm/raise');if(r.error)st.textContent=r.error};
+armLower.onclick=async()=>{const r=await post('/arm/lower');if(r.error)st.textContent=r.error};
 document.getElementById('runall').onclick=async()=>{const r=await post('/paths/runall');if(r.error)st.textContent=r.error};
 loadPaths();
 
@@ -434,9 +470,16 @@ async function poll(){try{
   poseEl.textContent='  x '+(pose[0]*100).toFixed(1)+' cm, y '+(pose[1]*100).toFixed(1)+' cm, heading '+(pose[2]*180/Math.PI).toFixed(1)+'°';
   let t=!s.connected?'connecting to robot...':s.moving?('moving: '+s.moving):s.last;
   if(s.seq.length)t='run all: '+s.seq.map((n,i)=>i===s.seq_i?'['+n+']':n).join(' → ')+(s.moving?'  ('+s.moving+')':'');
+  if(s.arm)t='arms: '+s.arm+' in progress (STOP holds them where they are)';
   if(s.mode_ok===false)t+='  |  robot NOT in API mode / chassis disabled';
+  armSt.textContent=s.arm?('arms: '+s.arm+'...'):s.arm_last;
+  const still=!s.moving&&!s.seq.length&&!s.arm;
+  armRaise.disabled=!still;armLower.disabled=!still;
   st.textContent=t+'  (clicks '+s.clicks+', holds '+s.holds+')';
-  const busyStep=s.moving&&(s.moving.startsWith('step')||s.moving.startsWith('path'))||s.seq.length>0;
+  const busyStep=s.moving&&(s.moving.startsWith('step')||s.moving.startsWith('path'))||s.seq.length>0||!!s.arm;
+  const pathBusy=!!s.active_path||s.seq.length>0||!!s.arm;
+  document.querySelectorAll('.prow button').forEach(b=>b.disabled=pathBusy);
+  document.getElementById('runall').disabled=pathBusy;
   moves.forEach(x=>x.disabled=!press&&(busyStep||!s.connected));
   lg.textContent=s.log.join('\n');lg.scrollTop=lg.scrollHeight;draw();
 }catch(e){st.textContent='B70 not reachable';if(!press)moves.forEach(x=>x.disabled=true)}}
@@ -482,6 +525,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parts = self.path.strip("/").split("/")
+        if parts[0] in ("step", "hold", "paths") and state["arm"] and parts[:2] != ["paths", "upload"]:
+            return self._send(409, {"error": "arms are moving"})
+        if parts[0] == "arm" and len(parts) == 2 and parts[1] in ARM_TIME:
+            if state["arm"] or state["moving"] or seq["names"]:
+                return self._send(409, {"error": "busy: wait until the robot is still"})
+            state["arm"] = parts[1]
+            note(f"arms: {parts[1]} ({ARM_TIME[parts[1]]} s)")
+            threading.Thread(target=run_arm, args=(parts[1],), daemon=True).start()
+            return self._send(200, {"ok": True})
         if parts[0] in ("step", "hold") and len(parts) == 2:
             d = parts[1]
             if d not in DIRS:
@@ -546,6 +598,9 @@ class Handler(BaseHTTPRequestHandler):
         elif parts[0] in ("release", "stop"):
             if parts[0] == "stop":
                 seq["abort"] = True
+                if state["arm"]:
+                    subprocess.run(ARM_STOP, capture_output=True)
+                    note("STOP: arm script interrupted")
             ok = send(parts[0])
             if parts[0] == "stop":
                 note("STOP pressed")
