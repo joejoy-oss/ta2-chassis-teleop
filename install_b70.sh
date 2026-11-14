@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Install / update these scripts on B70 and restart the web remote. Run on B70 from the repo checkout.
+# Robot motion is never started by this script.
+set -e
+cd "$(dirname "$0")"
+TOOLS=/root/openpi-xpu/client/outputs/tools      # mounted as /outputs/tools in the openpi-xpu-client container
+mkdir -p "$TOOLS" /root/ta2_paths
+install -m 644 chassis_test.py teleop.py "$TOOLS"/
+install -m 755 move.sh web_move.py /root/
+cp -n paths/*.csv /root/ta2_paths/ 2>/dev/null || true   # keep existing paths with the same name
+OLD=$(ss -ltnpH sport = :8088 | grep -o "pid=[0-9]*" | cut -d= -f2 || true)
+[ -n "$OLD" ] && kill "$OLD" && sleep 1.5
+nohup python3 /root/web_move.py > /root/web_move.log 2>&1 < /dev/null &
+sleep 3
+echo "web remote: http://$(hostname -I | awk '{print $1}'):8088"
+tail -n 5 /root/web_move.log
