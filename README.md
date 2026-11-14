@@ -83,3 +83,17 @@ python3 tests/sim_paths.py      # teleop.py + fake robot, follows paths/001-004 
 
 `TELEOP_SPEED` overrides the drive speed for tests only. Odometry uses `J_INV` from real runs but has not
 been checked with a tape measure.
+
+## Arms (standalone, `arm/`)
+
+Separate from the chassis code; nothing in the web remote or `move.sh` touches the arms.
+
+| file | runs where | what |
+|---|---|---|
+| `arm/arm_pose.py` | container, `/outputs/arm/` | both arms to the official `zero.py` raised pose, or back to the saved start pose |
+| `arm/arm.sh` | B70 `/root/` | `./arm.sh check`, `./arm.sh raise [--time 8]`, `./arm.sh lower` |
+
+Needs run mode API, both arms enabled and in **joint** control mode. The script holds the current pose
+with the FSM heartbeat until READY, then moves with a min-jerk profile (peak joint speed <= 0.35 rad/s).
+If a joint lags its command by > 0.3 rad for 0.5 s (possible contact), or on Ctrl+C, it holds where it is
+and pauses the FSM (`/api/fsm/enable` 0.0). Raising moves the arms forward and up: clear the space in front.

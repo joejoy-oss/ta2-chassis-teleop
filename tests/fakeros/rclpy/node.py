@@ -1,6 +1,10 @@
 import time, rclpy
 class Pub:
+    def __init__(s, topic="/api/chassis/velocity"): s.topic=topic
     def publish(s,m):
+        if s.topic != "/api/chassis/velocity":
+            if not rclpy.OK[0]: raise RuntimeError("context invalid")
+            return rclpy.ARM.cmd(s.topic, m)
         if not rclpy.OK[0]: raise RuntimeError("context invalid")
         rclpy.R.target=list(m.data); rclpy.R.sent.append(list(m.data))
         import os,sys
@@ -10,6 +14,13 @@ class Pub:
     def get_subscription_count(s): return 1
 class Node:
     def __init__(s,name): s._subs={}
-    def create_publisher(s,*a): return Pub()
+    def create_publisher(s,t,topic,q): return Pub(topic)
     def create_subscription(s,t,topic,cb,q): s._subs.setdefault(topic,[]).append(cb)
     def destroy_node(s): pass
+    def get_clock(s):
+        class C:
+            def now(c):
+                class T:
+                    def to_msg(t): return None
+                return T()
+        return C()

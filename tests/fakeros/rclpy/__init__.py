@@ -29,11 +29,49 @@ class Robot:
             s.p[i]+=w[i]*dt; s.p[i]=(s.p[i]+math.pi)%(2*math.pi)-math.pi
         return el,w
 R=Robot()
+
+
+class Arms:
+    """Two 7-joint arms with an FSM: PAUSE(0) -> SLOW_START(1, 0.5 s) -> READY(2) while fsm/enable 1.0
+    arrives at least every 1 s. In READY each joint follows its joint_cmd at <= 1 rad/s.
+    SC "block": {"arm": "right", "joint": 3, "at": -0.6} stops that joint there (simulated contact)."""
+    def __init__(s):
+        s.q={"left":[-0.05,1.57,0.13,0.25,-0.23,-0.02,-0.06],"right":[0.13,-1.55,-0.08,-0.28,-0.04,-0.02,0.11]}
+        s.q0={k:list(v) for k,v in s.q.items()}
+        s.target={k:list(v) for k,v in s.q.items()}; s.fsm=0; s.hb=-1e9; s.ss=None; s.last=time.monotonic(); s.pauses=0
+    def cmd(s, topic, m):
+        if topic=="/api/fsm/enable":
+            if m.data>=0.5:
+                s.hb=time.monotonic()
+                if s.fsm==0: s.fsm=1; s.ss=time.monotonic()
+            else:
+                s.fsm=0; s.pauses+=1
+        elif topic.endswith("_arm/joint_cmd"):
+            arm=topic.split("/")[2].split("_")[0]
+            mode=SC.get("mode",{})
+            if mode.get(f"{arm}_arm_control_mode",1)==1: s.target[arm]=list(m.position)
+    def step(s):
+        now=time.monotonic(); dt=now-s.last; s.last=now
+        if s.fsm and now-s.hb>1.0: s.fsm=0; s.pauses+=1
+        if s.fsm==1 and now-s.ss>0.5: s.fsm=2
+        if s.fsm==2:
+            for arm in s.q:
+                for i in range(7):
+                    d=s.target[arm][i]-s.q[arm][i]; s.q[arm][i]+=max(-dt,min(dt,d))
+            b=SC.get("block")
+            if b:   # the joint cannot pass b["at"] coming from its starting side
+                a,j,at=b["arm"],b["joint"],b["at"]
+                side=s.side if hasattr(s,"side") else None
+                if side is None: s.side=side=(1 if s.q0[a][j]>at else -1)
+                if (s.q[a][j]-at)*side<0: s.q[a][j]=at
+
+
+ARM=Arms()
 NODE=[None]
 def spin_once(node, timeout_sec=0):
     if not OK[0]: raise RuntimeError("context invalid")
     time.sleep(timeout_sec)
-    el,w=R.step(); now=time.monotonic()
+    el,w=R.step(); ARM.step(); now=time.monotonic()
     if SC.get("sigint_at") and el>SC["sigint_at"] and not SC.get("_sig"):
         SC["_sig"]=1; os.kill(os.getpid(), signal.SIGINT)
     lost = SC.get("lost_after") is not None and el>SC["lost_after"]
@@ -44,6 +82,13 @@ def spin_once(node, timeout_sec=0):
         noise=SC.get("noise",0.02)
         import random; m.velocity=[x+random.gauss(0,noise) for i,x in enumerate(w)]; m.position=list(R.p)
         for cb in node._subs.get("/chassis/joint_states",[]): cb(m)
+        for arm in ("left","right"):
+            if node._subs.get(f"/{arm}_arm/joint_states"):
+                a=JointState(); a.name=[f"{arm[0]}_joint{i+1}" for i in range(7)]; a.position=list(ARM.q[arm]); a.velocity=[0.0]*7
+                for cb in node._subs[f"/{arm}_arm/joint_states"]: cb(a)
+        if node._subs.get("/fsm_state"):
+            from std_msgs.msg import Int32
+            for cb in node._subs["/fsm_state"]: cb(Int32(ARM.fsm))
     if now>=R.next_mode:
         R.next_mode=now+1.0
         from std_msgs.msg import String
