@@ -7,7 +7,7 @@ TOOLS=/root/openpi-xpu/client/outputs/tools      # mounted as /outputs/tools in 
 mkdir -p "$TOOLS" /root/ta2_paths
 install -m 644 chassis_test.py teleop.py "$TOOLS"/
 install -m 755 move.sh web_move.py ta2_client.py /root/
-install -m 644 mission.py web_models.html vla_models.json /root/
+install -m 644 mission.py web_models.html api_docs.html vla_models.json /root/
 mkdir -p /root/openpi-xpu/client/outputs/arm
 install -m 644 arm/arm_pose.py arm/train_start_pose.json arm/read_arm_now.py arm/ik_offset.py arm/right_fk_fit.json arm/left_fk_fit.json arm/grasp_monitor.py /root/openpi-xpu/client/outputs/arm/
 install -m 755 arm/arm.sh arm/arm_down.sh /root/

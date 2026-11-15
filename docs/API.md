@@ -4,6 +4,10 @@
 `http://192.168.31.228:8088`。所有请求和响应均使用 JSON；动作异步启动，客户端可选择轮询等待。
 API 与网页共用机器人、序列锁、底层动作函数和急停；全流程任务由 `mission.py` 编排现有积木。
 
+在线文档与测试页为 `/api-docs`（主页面入口在新标签打开）。每张卡可编辑参数、直接测试、
+复制 curl / ta2_client.py 示例并查看 HTTP 状态码、耗时与 JSON；动作自动轮询并支持取消。
+测试会发送真实请求，不弹确认框，运动卡带明显标记；停止与急停仍遵循下述门控规则。
+
 ## 使用边界
 
 - **软件急停不等于硬件急停。** 软件急停依赖主机、网络、进程和机器人通信；现场必须有人能操作硬件急停。
@@ -88,7 +92,7 @@ POST 控制端点不需要请求体；启动动作使用 `Content-Type: applicat
     {"id":"r2g","name":"红 → 绿","paths":["003","004"]}
   ],
   "arm_poses":["raise","lower","start","start_hold","down5","open_right","close_right","open_left","close_left"],
-  "vla":{"seconds":60,"max_rad_s":1.0,"prompt":"抓取红色沙包","model":"grasp_v3_step10000"}
+  "vla":{"seconds":60,"max_rad_s":1.0,"prompt":"抓取红色沙包","model":"grasp_v3_step13000_rtc"}
 }
 ```
 
@@ -142,7 +146,7 @@ VLA 的终态 result 保留脚本 JSON 的原始字段，并带 `status`、`actu
 例如：
 
 ```json
-{"status":"time_limit","actuations":42,"error":null,"report":"/root/openpi-xpu/client/outputs/vla_web_20261115_100000/report.json","tag":"vla_web_20261115_100000","returncode":0,"model":"grasp_v3_step10000","rtc":false,"seconds":60,"grasped":null,"hand":null}
+{"status":"time_limit","actuations":42,"error":null,"report":"/root/openpi-xpu/client/outputs/vla_web_20261115_100000/report.json","tag":"vla_web_20261115_100000","returncode":0,"model":"grasp_v3_step13000_rtc","rtc":true,"seconds":60,"grasped":null,"hand":null}
 ```
 
 ## 单独下降与抓取
@@ -164,7 +168,9 @@ VLA 的终态 result 保留脚本 JSON 的原始字段，并带 `status`、`actu
 {"type":"vla.grasp","params":{"model":"grasp_v3_step10000_rtc","seconds":60,"stop_on_grasp":true}}
 ```
 
-model 必须是 `/api/v1/models` 的 id，同步版与 `_rtc` 版各自独立；省略时绑定请求开始时的网页选择。
+model 必须是 `/api/v1/models` 的 RTC id；同步版 id 已删除，使用时返回 UNKNOWN_MODEL。
+默认注册模型为 `grasp_v3_step13000_rtc`；省略时绑定请求开始时的网页选择。
+保存的已删除 id 在服务启动时回退到该默认值。
 指定 model 不保存选择，也不改变网页。seconds 为 1–120 的有限数字，默认该模型的 seconds；
 stop_on_grasp 必须是布尔值，默认 false。网页「开始抓取」仍走旧逻辑，不启用检测。
 
@@ -223,7 +229,7 @@ model 默认当前选中模型，不改变选择。检查失败仍返回 HTTP 20
 `GET /api/v1/models` 示例（models 数组实际包含全部注册模型）：
 
 ```json
-{"selected":"grasp_v3_step10000","models":[{"id":"grasp_v3_step10000","name":"最新模型 v3 · 10000 步","training":"122 段演示 · 11 月 15 日","prompt":"抓取红色沙包","seconds":60,"speed":1.0,"rtc":false,"running":true,"selected":true}]}
+{"selected":"grasp_v3_step13000_rtc","models":[{"id":"grasp_v3_step13000_rtc","name":"最新模型 v3 · 13000 步 · RTC 流畅模式","training":"122 段演示 · 11 月 15 日","prompt":"抓取红色沙包","seconds":60,"speed":1.0,"rtc":true,"running":true,"selected":true}]}
 ```
 
 每项含 public_model 全部字段、推理容器的 running 和 selected 标记；只读 Docker 状态，不启动或停止服务。

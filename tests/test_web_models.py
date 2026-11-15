@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NEW = "grasp_v3_step5000"
-OLD = "sandbag_v2_step4999"
+NEW = "grasp_v3_step5000_rtc"
+OLD = "sandbag_v2_step4999_rtc"
 
 
 class ModelSelectionTests(unittest.TestCase):
@@ -111,7 +111,7 @@ class ModelSelectionTests(unittest.TestCase):
         status, result = self.request("/api/models", "GET")
         self.assertEqual(status, 200)
         self.assertEqual(result["selected"], OLD)
-        # each model is listed twice (plain and RTC variant); both share the same policy container
+        # Only RTC variants are registered; each retains its policy container.
         self.assertEqual({model["id"]: model["running"] for model in result["models"]},
                          {key: value["container"] == "grasp-v3-step5000-policy" for key, value in self.web.VLA_MODELS.items()})
         status, result = self.request("/status", "GET")
@@ -124,7 +124,8 @@ class ModelSelectionTests(unittest.TestCase):
         self.assertEqual(self.web.state["vla_selected"], NEW)
 
     def test_invalid_saved_selection_falls_back_to_default(self):
-        for value in ("removed_model", [], None):
+        for value in ("removed_model", "grasp_v3_step13000", "grasp_v3_step10000",
+                      "grasp_v3_step5000", "sandbag_v2_step4999", [], None):
             Path(self.selection).write_text(json.dumps({"model": value}))
             self.assertEqual(self.load_module().state["vla_selected"], self.web.DEFAULT_MODEL)
 

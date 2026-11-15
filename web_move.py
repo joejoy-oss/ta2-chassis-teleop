@@ -1097,7 +1097,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
 .mission-current{font-weight:700;color:var(--accent);background:var(--grid);border-radius:6px}
 </style></head><body>
 <header><div class="bar">
-  <div class="identity"><h1>TA2 遥控</h1><span id="connection" class="connection" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-text">连接中…</span></span><span id="mode" class="badge">模式未知</span></div>
+  <div class="identity"><h1>TA2 遥控</h1><a href="/api-docs" target="_blank" rel="noopener">接口文档 / 测试</a><span id="connection" class="connection" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-text">连接中…</span></span><span id="mode" class="badge">模式未知</span></div>
   <button id="estop" class="estop" title="急停底盘、手臂与抓取任务（Esc）">急停</button>
   <div class="activity"><span>当前活动</span><span id="status" role="status">正在连接机器人…</span></div>
 </div></header>
@@ -1493,6 +1493,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.api_error(APIError(500, "INTERNAL_ERROR", str(e)))
         if path == "/":
             self._send(200, PAGE, "text/html")
+        elif path == "/api-docs":
+            with open(os.path.join(os.path.dirname(__file__), "api_docs.html"), encoding="utf-8") as api_page:
+                self._send(200, api_page.read(), "text/html")
         elif path in ("/models", "/models/"):
             with open(os.path.join(os.path.dirname(__file__), "web_models.html")) as model_page:
                 self._send(200, model_page.read(), "text/html")

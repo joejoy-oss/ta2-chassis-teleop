@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>接口文档 / 测试 · TA2</title>
+<style>
+:root{--bg:#f5f5f4;--fg:#252729;--muted:#64686c;--panel:#fff;--line:#dcdedc;--accent:#455c68;--solid:#303c43;--on-solid:#fff;--ok:#4f7260;--stop:#c62828}
+@media(prefers-color-scheme:dark){:root{--bg:#17191a;--fg:#e5e7e8;--muted:#a3a9ad;--panel:#202426;--line:#3e4548;--accent:#a7bdc8;--solid:#cfdbdf;--on-solid:#1c2529;--ok:#9abca8;--stop:#ef5350}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}.bar,main{max-width:880px;margin:auto;padding:16px 20px}.bar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}.bar p{flex:1;min-width:130px;margin:0}.controls{display:flex;gap:8px}main{padding-bottom:48px}h1{font-size:24px;margin:16px 0 8px}h2{font-size:18px;margin:0;overflow-wrap:anywhere}p{margin:8px 0}a{color:var(--accent)}.muted,small{color:var(--muted)}.card{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:20px;margin:18px 0;scroll-margin-top:150px}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.badge{font-size:12px;border:1px solid var(--line);border-radius:99px;padding:2px 9px}.motion{color:var(--stop);border-color:var(--stop);font-weight:700}button,input,select{font:inherit;min-height:44px;border:1px solid var(--line);border-radius:8px;padding:8px 12px}button{background:var(--solid);color:var(--on-solid);cursor:pointer}button:disabled{opacity:.5;cursor:default}.secondary{background:var(--panel);color:var(--fg)}#emergency{background:#c62828;border-color:#c62828;color:#fff;font-weight:700}input,select{background:var(--bg);color:var(--fg);width:100%;min-width:0}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:16px 0}label{display:block;font-weight:600}label small{display:block;font-weight:400;margin:4px 0 8px}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;font-size:12px}code{overflow-wrap:anywhere}.result{min-height:52px}.meta{color:var(--muted);font-size:13px;min-height:22px}summary{cursor:pointer;padding:12px 0;color:var(--accent)}.table-scroll{overflow:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}.nav{display:flex;gap:8px 14px;flex-wrap:wrap}.ok{color:var(--ok)}#quick-result{width:100%;font-size:12px;max-height:100px;overflow:auto;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}#connection{font-size:13px}noscript{color:var(--stop)}
+@media(max-width:480px){.bar,main{padding:12px}.card{padding:16px}.fields{grid-template-columns:1fr}.controls button{padding:8px 14px}h1{font-size:21px}.bar p{font-size:12px}}
+</style></head><body>
+<header><div class="bar">
+<p id="connection" role="status">正在连接 API…</p>
+<div class="controls"><button id="soft-stop" type="button">停止</button><button id="emergency" type="button">急停</button></div>
+<output id="quick-result" aria-live="polite"></output>
+</div></header>
+<main>
+<h1>接口文档 / 一键测试</h1>
+<p>编辑参数后点击「测试」，立即发送真实请求，不弹确认框。带 <strong class="motion">会动机器人</strong> 的卡片会启动动作。</p>
+<p class="muted">动作返回 202 后自动查询至结束。停止与急停独立于查询；路线或全流程运行期间只接受急停。关闭页面或请求超时不会停止机器人。</p>
+<p class="muted">所有调用都使用本机同源 <code>/api/v1</code>。模型只保留 RTC 版；指定单次抓取模型不改变网页选择。软件急停不能代替硬件急停。</p>
+<noscript>请启用 JavaScript 才能编辑参数和发送测试请求。</noscript>
+<p id="catalog-status" role="status">正在读取 capabilities 和 models…</p>
+<nav class="nav" id="navigation" aria-label="接口导航"></nav>
+<div id="cards"></div>
+<section class="card" id="errors"><h2>错误码</h2><p>HTTP 错误统一为 <code>{"error":{"code":"…","message":"…"}}</code>。动作执行失败在 HTTP 200 的记录中返回 status / error；failed、aborted 不代表查询失败。超时不会自动停止机器人。</p><div class="table-scroll"><table><thead><tr><th>code</th><th>HTTP / 动作错误</th><th>含义</th></tr></thead><tbody id="error-rows"></tbody></table></div></section>
+</main>
+<script>
+'use strict';
+const API='/api/v1';
+const field=(key,label,kind,help,extra={})=>({key,label,kind,help,...extra});
+const modelField=()=>field('model','模型','select','string，可省略；默认网页当前模型，只作用于本次请求。',{source:'models',optional:true});
+const idField=()=>field('id','动作 ID','text','string，必填；使用 POST actions 返回的 action_id。');
+const definitions=[
+ {id:'health',title:'health · 健康状态',method:'GET',path:'/health',description:'读取服务、底盘连接、API 模式、忙状态和当前动作；ok 不代表机器人已就绪。',client:'c.health()',errors:['INTERNAL_ERROR']},
+ {id:'state',title:'state · 结构化状态',method:'GET',path:'/state',description:'读取底盘、手臂、抓取、路线、急停和全流程快照。',client:'c.state()',errors:['INTERNAL_ERROR']},
+ {id:'capabilities',title:'capabilities · 动作能力',method:'GET',path:'/capabilities',description:'读取动作参数、已加载路径、路线、手臂姿态和当前模型参数。',client:'c.capabilities()',errors:['INTERNAL_ERROR']},
+ {id:'models',title:'models · RTC 模型',method:'GET',path:'/models',description:'列出全部 RTC 模型、推理容器运行状态和当前选择；不启动服务。',client:'c.models()',errors:['INTERNAL_ERROR']},
+ {id:'grippers',title:'grippers · 夹爪读数',method:'GET',path:'/grippers',description:'只读左右夹爪位置 rad、力矩 Nm、末端高度 m、fresh 和 holding；首读启动只读监控。',client:'c.grippers()',errors:['MONITOR_DOWN']},
+ {id:'preflight',title:'preflight · 只读预检',method:'GET',path:'/preflight',description:'检查连接、API 模式、急停、空闲、模型服务、001–004 路径及双爪新鲜且空闲；检查失败仍为 HTTP 200 / ok=false。',fields:[modelField()],errors:['UNKNOWN_MODEL','POLICY_DOWN','MONITOR_DOWN'],extra:'POLICY_DOWN / MONITOR_DOWN 在检查项 detail 中返回，不启动动作。'},
+ {id:'actions',title:'actions · 动作历史',method:'GET',path:'/actions',description:'读取内存中最新动作，新的在前；服务最多保留 200 条，重启清空。',fields:[field('limit','条数','number','integer，1–200，默认 20。',{min:1,max:200,step:1,value:20})],errors:['BAD_REQUEST']},
+ {id:'action',title:'actions/<id> · 查询动作',method:'GET',path:'/actions/<id>',description:'按 ID 查询完整记录；终态为 succeeded、failed 或 aborted。',fields:[idField()],errors:['NOT_FOUND']},
+ {id:'chassis.step',title:'chassis.step · 底盘点动',action:true,motion:true,description:'发送一次底盘点动；平移 10 cm 或转动 15°，以底层 idle 事件判断结束。',fields:[field('direction','方向','select','string，必填；可用方向由 capabilities 提供。',{source:'directions'})]},
+ {id:'path.run',title:'path.run · 单条路径',action:true,motion:true,description:'从当前位置及朝向执行已加载路径，以 path done 判断成功。',fields:[field('name','路径','select','string，必填；不含 .csv 后缀，由 capabilities 提供。',{source:'paths'})],errors:['UNKNOWN_PATH']},
+ {id:'path.run_all',title:'path.run_all · 全部路径',action:true,motion:true,description:'按名称顺序运行全部已加载路径，每段之间保留服务端配置的暂停。',errors:['UNKNOWN_PATH']},
+ {id:'route.run',title:'route.run · 路线',action:true,motion:true,description:'执行绿→红或红→绿路线，运行及暂停期间只接受急停，停止和取消均拒绝。',fields:[field('route','路线','select','string，必填；路线与路径组合由 capabilities 提供。',{source:'routes'})],errors:['UNKNOWN_ROUTE','UNKNOWN_PATH','ROUTE_ESTOP_ONLY']},
+ {id:'arm.pose',title:'arm.pose · 手臂姿态',action:true,motion:true,description:'运行现有姿态或夹爪动作；down5 保持右臂下降 5 cm 的原逻辑。',fields:[field('pose','姿态','select','string，必填；可用姿态由 capabilities 提供。',{source:'poses'})]},
+ {id:'arm.down',title:'arm.down · 单手下降',action:true,motion:true,description:'指定左手或右手下降任意厘米，脚本自动限位，结果保留退出码和最后最多 8 行输出。',fields:[field('hand','手','select','string，必填，left 或 right。',{source:'hands'}),field('cm','下降厘米','number','number，必填，0.5–15，界面初值 5。',{min:.5,max:15,step:'any',value:5})]},
+ {id:'vla.grasp',title:'vla.grasp · 单次抓取',action:true,motion:true,description:'按模型运行抓取；启用 stop_on_grasp 后，任一手满足全流程抓取判据即停止 VLA 并记 succeeded。',fields:[modelField(),field('seconds','策略时长（秒）','number','number，可省略，1–120；默认所选模型 seconds。',{min:1,max:120,step:'any',optional:true}),field('stop_on_grasp','抓住即停','select','boolean，默认 false；true 要求启动前监控新鲜。',{options:[['false','false · 不判断抓取'],['true','true · 抓住即停']],value:'false',boolean:true})],errors:['UNKNOWN_MODEL','POLICY_DOWN','MONITOR_DOWN','FEEDBACK_LOST'],extra:'结果含 grasped、hand、model、rtc、seconds、status、actuations、error、report、tag。未启用判断时 grasped=null；启用但跑满时限仍可 succeeded，是否抓到须看 grasped。'},
+ {id:'odom.reset',title:'odom.reset · 重置里程计',action:true,description:'重置里程计原点与轨迹；不移动机器人，但会改变坐标参考。'},
+ {id:'mission.run',title:'mission.run · 全流程',action:true,motion:true,description:'预检后执行出发、抓取、收臂、返回、下降、松爪；运行及清理期间只接受急停。',fields:[field('attempts','最多抓取次数','number','integer，可省略，1–服务端 ATTEMPTS（通常 5）；默认服务端 ATTEMPTS。',{min:1,step:1,optional:true}),field('prompt','任务提示词','text','string，可省略，1–500 字符；不接受单引号、换行或 NUL。默认当前模型或 PROMPT 环境配置。',{optional:true,maxLength:500}),field('port','推理端口','number','integer，可省略，1–65535；默认当前模型端口或 MISSION_PORT / POLICY_PORT。',{min:1,max:65535,step:1,optional:true}),field('rtc','RTC 模式','select','boolean，可省略；默认选中模型模式（RTC）或 MISSION_RTC 环境配置。',{optional:true,boolean:true,options:[['true','true'],['false','false']]})],errors:['MISSION_PREFLIGHT_FAILED','MISSION_ESTOP_ONLY']},
+ {id:'cancel',title:'actions/<id>/cancel · 取消动作',method:'POST',path:'/actions/<id>/cancel',description:'对仍运行的动作请求软停，记 aborted / STOPPED；路线或全流程拒绝取消，只能急停。',fields:[idField()],errors:['NOT_FOUND','NOT_RUNNING','ROUTE_ESTOP_ONLY','MISSION_ESTOP_ONLY','TELEOP_DISCONNECTED']},
+ {id:'stop',title:'stop · 停止',method:'POST',path:'/stop',description:'停止底盘、手臂、路径和 VLA，当前动作记 aborted / STOPPED；路线和全流程期间拒绝。',client:'c.stop()',errors:['ROUTE_ESTOP_ONLY','MISSION_ESTOP_ONLY','TELEOP_DISCONNECTED']},
+ {id:'estop',title:'estop · 急停',method:'POST',path:'/estop',description:'绕过动作锁请求急停并暂停 FSM，当前动作记 aborted / ESTOP；200 表示已接受，物理停止需另行确认。',client:'c.estop()',errors:['INTERNAL_ERROR']}
+];
+const actionErrors=['BAD_REQUEST','BUSY','NOT_CONNECTED','ESTOP_ACTIVE','ROUTE_ESTOP_ONLY','MISSION_ESTOP_ONLY','SCRIPT_ERROR','ACTION_FAILED','TIMEOUT','FEEDBACK_LOST','NOT_API_MODE','STUCK','TELEOP_DISCONNECTED','STOPPED / ESTOP'];
+const errorCodes=[
+  [
+    "BAD_REQUEST",
+    "400",
+    "未知动作、参数或 JSON 不合法、limit 越界"
+  ],
+  [
+    "UNKNOWN_PATH",
+    "400",
+    "路径不存在、路线所需路径缺失或无路径"
+  ],
+  [
+    "UNKNOWN_ROUTE",
+    "400",
+    "非 g2r / r2g"
+  ],
+  [
+    "UNKNOWN_MODEL",
+    "400",
+    "未注册的 model id"
+  ],
+  [
+    "NOT_FOUND",
+    "404",
+    "端点或动作 ID 不存在"
+  ],
+  [
+    "BUSY",
+    "409",
+    "网页或 API 动作仍占用机器人"
+  ],
+  [
+    "ESTOP_ACTIVE",
+    "409",
+    "急停流程执行中"
+  ],
+  [
+    "ROUTE_ESTOP_ONLY",
+    "409",
+    "路线期间只允许急停；优先于其他 POST 检查"
+  ],
+  [
+    "MISSION_ESTOP_ONLY",
+    "409",
+    "全流程运行及清理期间仅接受急停，优先于路线门控和参数检查"
+  ],
+  [
+    "MISSION_PREFLIGHT_FAILED",
+    "409",
+    "模式、路径、反馈或夹持预检失败，未开始移动"
+  ],
+  [
+    "NOT_RUNNING",
+    "409",
+    "取消目标已经结束"
+  ],
+  [
+    "NOT_CONNECTED",
+    "503",
+    "动作启动前 teleop 未连接"
+  ],
+  [
+    "POLICY_DOWN",
+    "503",
+    "VLA 推理容器未运行或检查失败"
+  ],
+  [
+    "MONITOR_DOWN",
+    "503",
+    "监控无法启动、已退出、3 秒内无数值读数；启用检测的抓取还要求新鲜反馈"
+  ],
+  [
+    "TELEOP_DISCONNECTED",
+    "动作错误 / 503 控制错误",
+    "teleop 断开或写入失败"
+  ],
+  [
+    "TIMEOUT",
+    "动作错误",
+    "运动超时"
+  ],
+  [
+    "STUCK",
+    "动作错误",
+    "路径无进展"
+  ],
+  [
+    "FEEDBACK_LOST",
+    "动作错误",
+    "底盘或手臂反馈不新鲜或丢失"
+  ],
+  [
+    "NOT_API_MODE",
+    "动作错误",
+    "非 API 模式、底盘未启用或模式未知"
+  ],
+  [
+    "SCRIPT_ERROR",
+    "动作错误",
+    "手臂/VLA 脚本非零退出或启动异常"
+  ],
+  [
+    "ACTION_FAILED",
+    "动作错误",
+    "其他底层异常结束原因"
+  ],
+  [
+    "STOPPED / ESTOP",
+    "动作错误",
+    "软停（含 cancel）/ 急停"
+  ],
+  [
+    "INTERNAL_ERROR",
+    "500",
+    "非预期的服务端异常"
+  ]
+];
+const el=(tag,text,className)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node};
+const cards=new Map();
+let catalog={};
+const python=value=>value===null?'None':typeof value==='boolean'?(value?'True':'False'):JSON.stringify(value);
+const shell=value=>"'"+String(value).replaceAll("'","'\\''")+"'";
+function values(card){
+  const result={};
+  for(const spec of card.def.fields||[]){
+    const input=card.inputs[spec.key],value=input.value;
+    if(spec.optional&&value==='')continue;
+    result[spec.key]=spec.boolean?value==='true':spec.kind==='number'?Number(value):value;
+  }
+  return result;
+}
+function requestFor(def,params){
+  const method=def.action?'POST':def.method;
+  let path=def.action?'/actions':def.path;
+  path=path.replace('<id>',encodeURIComponent(params.id||'<id>'));
+  if(def.id==='actions')path+='?'+new URLSearchParams({limit:params.limit});
+  if(def.id==='preflight'&&params.model)path+='?'+new URLSearchParams({model:params.model});
+  return {method,path:API+path,body:def.action?{type:def.id,params}:undefined};
+}
+function pythonCall(def,params){
+  if(def.client)return def.client;
+  if(def.action){
+    const kwargs=Object.entries(params).map(([key,value])=>key+'='+python(value));
+    return 'aid = c.start('+[python(def.id),...kwargs].join(', ')+')\nrecord = c.wait(aid, timeout=1800, raise_on_fail=False)\nprint(record)\n# 软停（路线 / 全流程拒绝）：c.cancel(aid)\n# 急停：c.estop()';
+  }
+  if(def.id==='preflight')return params.model?'c.preflight(model='+python(params.model)+')':'c.preflight()';
+  if(def.id==='actions')return 'c.actions(limit='+params.limit+')';
+  return 'c.'+(def.id==='cancel'?'cancel':'action')+'('+python(params.id||'<id>')+')';
+}
+function examples(card){
+  const params=values(card),request=requestFor(card.def,params);
+  card.curl.textContent='curl -i -X '+request.method+' '+shell(location.origin+request.path)+(request.body?' \\\n  -H \'Content-Type: application/json\' \\\n  --data '+shell(JSON.stringify(request.body)):'');
+  const call=pythonCall(card.def,params);
+  card.python.textContent='from ta2_client import TA2Client\nc = TA2Client('+python(location.origin)+', timeout=10)\n'+(card.def.action?call:'print('+call+')');
+}
+async function copyText(text,button){
+  try{
+    if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(text);
+    else{
+      // LAN HTTP pages may not have the Clipboard API.
+      const area=el('textarea');area.value=text;area.style.position='fixed';area.style.opacity='0';document.body.append(area);
+      area.select();let copied;try{copied=document.execCommand('copy')}finally{area.remove()}
+      if(!copied)throw Error('请选中示例手动复制');
+    }
+    button.textContent='已复制';
+  }catch(error){button.textContent='复制失败，请手动复制'}
+  setTimeout(()=>{button.textContent='复制'},2000);
+}
+function fillOptions(card,spec){
+  const input=card.inputs[spec.key],old=input.value;
+  const choices=spec.source?(catalog[spec.source]||[]):spec.options||[];
+  input.replaceChildren();
+  if(spec.optional)input.append(new Option('使用服务端默认值',''));
+  for(const [value,label] of choices)input.append(new Option(label,value));
+  if([...input.options].some(option=>option.value===old))input.value=old;
+  else if(spec.value!==undefined)input.value=spec.value;
+  input.disabled=choices.length===0&&!spec.optional;
+  if(input.disabled)input.append(new Option('暂无选项，请检查能力加载',''));
+}
+function buildCard(def){
+  const section=el('section',undefined,'card');section.id='card-'+def.id;
+  const heading=el('div',undefined,'row');heading.append(el('h2',def.title));
+  if(def.motion)heading.append(el('span','会动机器人','badge motion'));
+  else if(def.action)heading.append(el('span','改变坐标参考','badge'));
+  section.append(heading,el('p',def.description),el('code',(def.action?'POST':def.method)+' '+API+(def.action?'/actions':def.path)));
+  if(def.extra)section.append(el('p',def.extra,'muted'));
+  const form=el('form'),fields=el('div',undefined,'fields');
+  const card={def,section,inputs:{},aid:null};
+  for(const spec of def.fields||[]){
+    const label=el('label',spec.label),input=el(spec.kind==='select'?'select':'input');
+    input.id=def.id+'-'+spec.key;input.name=spec.key;label.htmlFor=input.id;
+    input.required=!spec.optional;
+    if(spec.kind!=='select')input.type=spec.kind;
+    for(const key of ['min','max','step','maxLength'])if(spec[key]!==undefined)input[key]=spec[key];
+    if(spec.value!==undefined)input.value=spec.value;
+    if(spec.optional&&spec.kind!=='select')input.placeholder='留空使用服务端默认值';
+    card.inputs[spec.key]=input;
+    if(spec.kind==='select')fillOptions(card,spec);
+    label.append(el('small',spec.help),input);fields.append(label);
+  }
+  if(!(def.fields||[]).length)fields.append(el('p','参数：无。','muted'));
+  const buttons=el('div',undefined,'row'),test=el('button','测试');test.type='submit';test.className='test';buttons.append(test);
+  card.test=test;
+  if(def.action){
+    card.cancel=el('button','取消此动作','secondary');card.cancel.type='button';card.cancel.disabled=true;
+    card.cancel.onclick=()=>cancelAction(card);buttons.append(card.cancel);
+  }
+  card.meta=el('p','尚未请求','meta');card.meta.setAttribute('role','status');
+  card.output=el('pre','响应 JSON 将显示在这里','result');
+  card.cancelResult=el('pre',undefined,'result');card.cancelResult.hidden=true;
+  form.append(fields,buttons);section.append(form,card.meta,card.output,card.cancelResult);
+  const snippets=el('details'),summary=el('summary','curl / ta2_client.py 调用示例（随参数更新）');snippets.append(summary);
+  for(const [key,title] of [['curl','curl'],['python','Python']]){
+    const row=el('div',undefined,'row'),copy=el('button','复制','secondary');copy.type='button';
+    card[key]=el('pre');copy.onclick=()=>copyText(card[key].textContent,copy);
+    row.append(el('strong',title),copy);snippets.append(row,card[key]);
+  }
+  section.append(snippets);
+  const codes=[...new Set([...(def.action?actionErrors:[]),...(def.errors||[]),'INTERNAL_ERROR'])];
+  const details=el('details');details.append(el('summary','错误码说明'));
+  for(const code of codes){
+    const entry=errorCodes.find(row=>row[0]===code);
+    details.append(el('p',entry?entry[0]+' · '+entry[1]+'：'+entry[2]:code));
+  }
+  details.append(el('p','网络失败或客户端超时不保证服务端没接受动作；请查 health / actions，必要时使用停止或急停。','muted'));
+  section.append(details);document.getElementById('cards').append(section);
+  const link=el('a',def.id);link.href='#'+section.id;document.getElementById('navigation').append(link);
+  cards.set(def.id,card);examples(card);
+  form.oninput=()=>examples(card);form.onchange=()=>examples(card);
+  form.onsubmit=event=>{event.preventDefault();if(form.reportValidity())runCard(card)};
+}
+async function request(method,path,body){
+  if(!path.startsWith(API+'/'))throw Error('仅允许 /api/v1 请求');
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000),start=performance.now();
+  try{
+    const response=await fetch(path,{method,headers:{Accept:'application/json',...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:controller.signal,cache:'no-store'});
+    const text=await response.text();let data;try{data=JSON.parse(text)}catch{data={response:text}}
+    return {status:response.status,ok:response.ok,data,ms:Math.round(performance.now()-start)};
+  }finally{clearTimeout(timer)}
+}
+function show(card,response,prefix=''){
+  card.meta.textContent=prefix+'HTTP '+response.status+' · '+response.ms+' ms';
+  card.output.textContent=JSON.stringify(response.data,null,2);
+}
+async function runCard(card){
+  if(card.test.disabled)return;
+  if((card.def.fields||[]).some(spec=>!spec.optional&&card.inputs[spec.key].disabled)){
+    card.meta.textContent='缺少可用参数选项，请检查 capabilities / models 并刷新页面。';return;
+  }
+  card.test.disabled=true;card.aid=null;card.terminal=false;if(card.cancel)card.cancel.disabled=true;
+  card.cancelResult.hidden=true;card.meta.textContent='请求中…';const started=performance.now();
+  try{
+    const req=requestFor(card.def,values(card)),response=await request(req.method,req.path,req.body);show(card,response);
+    if(card.def.action&&response.ok&&response.data.action_id){
+      card.aid=response.data.action_id;card.cancel.disabled=false;
+      // Seed the generic query/cancel cards without changing their examples silently.
+      for(const id of ['action','cancel']){
+        const target=cards.get(id);target.inputs.id.value=card.aid;examples(target);
+      }
+      let record=response.data.action;
+      while(!record||record.status==='running'){
+        await new Promise(resolve=>setTimeout(resolve,500));
+        const poll=await request('GET',API+'/actions/'+encodeURIComponent(card.aid));
+        show(card,poll,'启动 HTTP '+response.status+' · '+response.ms+' ms；累计 '+((performance.now()-started)/1000).toFixed(1)+' s；查询 ');
+        if(!poll.ok)return;
+        record=poll.data;
+      }
+      card.output.textContent=JSON.stringify(record,null,2);card.terminal=true;card.cancel.disabled=true;
+      card.meta.textContent+=' · '+record.status;
+    }
+  }catch(error){card.meta.textContent='连接错误 / 超时：'+error.message+'。请求可能已接受，请查询动作或停止；'+Math.round(performance.now()-started)+' ms';}
+  finally{card.test.disabled=false;}
+}
+async function cancelAction(card){
+  if(!card.aid)return;card.cancel.disabled=true;card.cancelResult.hidden=false;
+  try{
+    const result=await request('POST',API+'/actions/'+encodeURIComponent(card.aid)+'/cancel');
+    card.cancelResult.textContent='取消：HTTP '+result.status+' · '+result.ms+' ms\n'+JSON.stringify(result.data,null,2);
+  }catch(error){card.cancelResult.textContent='取消请求失败：'+error.message}
+  finally{card.cancel.disabled=Boolean(card.terminal)}
+}
+async function quickStop(kind,button){
+  button.disabled=true;
+  const output=document.getElementById('quick-result');output.textContent='正在请求'+(kind==='estop'?'急停':'停止')+'…';
+  try{
+    const result=await request('POST',API+'/'+kind);show(cards.get(kind),result);
+    output.textContent=(kind==='estop'?'急停':'停止')+' · HTTP '+result.status+' · '+result.ms+' ms\n'+JSON.stringify(result.data);
+  }catch(error){output.textContent='请求失败：'+error.message}
+  finally{button.disabled=false}
+}
+async function loadCatalog(){
+  const status=document.getElementById('catalog-status');
+  const results=await Promise.allSettled([request('GET',API+'/capabilities'),request('GET',API+'/models')]);
+  const [capResult,modelResult]=results;
+  const messages=[];
+  if(capResult.status==='fulfilled'&&capResult.value.ok){
+    const caps=capResult.value.data;
+    catalog={...catalog,directions:(caps.actions['chassis.step']?.direction||[]).map(x=>[x,x]),
+      paths:(caps.paths||[]).map(x=>[x,x]),routes:(caps.routes||[]).map(x=>[x.id,x.name+' · '+x.paths.join(' → ')]),
+      poses:(caps.arm_poses||[]).map(x=>[x,x]),hands:(caps.actions['arm.down']?.hand||[]).map(x=>[x,x])};
+  }else messages.push('能力加载失败');
+  if(modelResult.status==='fulfilled'&&modelResult.value.ok){
+    const models=modelResult.value.data;
+    catalog.models=models.models.map(m=>[m.id,m.name+' · '+m.seconds+' s · '+(m.running?'运行中':'服务未运行')+(m.selected?' · 当前选中':'')]);
+  }else messages.push('模型加载失败');
+  for(const card of cards.values()){
+    for(const spec of card.def.fields||[])if(spec.source)fillOptions(card,spec);
+    examples(card);
+  }
+  status.textContent=messages.length?messages.join('；')+'。可用只读卡检查服务后刷新页面。':'参数选项已从服务端加载；默认值由每次请求时的服务端配置决定。';
+}
+async function healthLoop(){
+  const connection=document.getElementById('connection');
+  try{
+    const result=await request('GET',API+'/health');
+    if(!result.ok)throw Error('HTTP '+result.status);
+    const h=result.data;
+    connection.textContent='API 已连接 · 底盘'+(h.connected?'在线':'离线')+' · '+(h.api_mode?'API 模式':'模式未就绪')+' · '+(h.estop_active?'急停中':h.busy?'忙碌':'空闲');
+    connection.className=h.connected&&h.api_mode&&!h.estop_active?'ok':'';
+  }catch(error){connection.textContent='API 连接失败：'+error.message;connection.className='';}
+  setTimeout(healthLoop,2000);
+}
+for(const def of definitions)buildCard(def);
+for(const row of errorCodes){const tr=el('tr');for(const value of row)tr.append(el('td',value));document.getElementById('error-rows').append(tr)}
+document.getElementById('soft-stop').onclick=event=>quickStop('stop',event.currentTarget);
+document.getElementById('emergency').onclick=event=>quickStop('estop',event.currentTarget);
+document.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();document.getElementById('emergency').click()}});
+loadCatalog();healthLoop();
+</script></body></html>

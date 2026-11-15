@@ -48,9 +48,9 @@ Single column, Chinese labels, works on a phone. From top to bottom:
 - **Top bar** (always visible): connection, API mode, current activity, and the only red button,
   **急停 (E-STOP)**; the **Esc** key does the same. See Safety below.
 - **VLA 抓取**: the big button 开始抓取（60 秒） runs the currently selected model in `vla_models.json`
-  for 60 s at max 0.5 rad/s (Start pose with grippers open first). **选择 / 切换模型** opens `/models`,
-  listing deployed models (`grasp_v3_step5000` on port 8002 with prompt 抓取红色沙包, and morning
-  `sandbag_v2_step4999` on port 8000 with prompt 抓取沙包) and their container states. Selection is saved
+  for 60 s at max 1.0 rad/s (Start pose with grippers open first). **选择 / 切换模型** opens `/models`,
+  listing only RTC models: v3 step 13000 (port 8004, default `grasp_v3_step13000_rtc`),
+  step 10000 (8003), step 5000 (8002), and v2 step 4999 (8000), with their container states. Selection is saved
   in `/root/ta2_vla_selected.json` without starting motion and is also used as the default model for
   **开始全流程** unless overridden via API parameters or environment variables. Switching is refused during
   motion. Below it, small arm buttons: 起始姿态 (training start pose), 起始姿态·保持夹爪, 右臂下降 5 cm,
@@ -215,10 +215,10 @@ python3 -m unittest discover -s tests -p 'test_*.py' -v
 
 ## v3 checkpoint 10000 deployment (2026-11-15)
 
-The newest registered model is v3 step 10000, trained on the same 122 demonstrations.
+The previously deployed model is v3 step 10000, trained on the same 122 demonstrations.
 `vla/vla_grasp_v3_step10000.sh` pins `grasp-v3-step10000-policy` on localhost port 8003,
-prompt 抓取红色沙包, default 60 s and max 0.5 rad/s. The matching `_rtc.sh` runner uses
-`RTC=1` with the existing shared runner. Both entries appear in `/models`; older deployed
+prompt 抓取红色沙包, default 60 s and max 1.0 rad/s. The matching `_rtc.sh` runner uses
+`RTC=1` with the existing shared runner. Only the `_rtc` entry appears in `/models`; older RTC
 models remain available. Checkpoint 8000 is downloaded only and is not registered or served.
 
 B70 JAX weights: `/data/ta2/model_exports/grasp_v3_step10000`.
@@ -235,3 +235,15 @@ settings and use the existing shared runner and training start pose. Older model
 JAX checkpoint: `/data/ta2/model_exports/grasp_v3_step13000`.
 PyTorch checkpoint: `/data/ta2/model_exports/grasp_v3_step13000_pytorch`.
 Verification and offline smoke evidence: `/data/ta2/model_exports/grasp_v3_eval/step13000_deployment`.
+
+Only the four `_rtc` model IDs are registered. A saved, removed synchronous ID falls back
+at startup to `grasp_v3_step13000_rtc`. Synchronous shell scripts remain installed because
+the RTC wrappers call them with `RTC=1`.
+
+## 接口文档 / 一键测试
+
+主页面入口在新标签打开 `/api-docs`：中文移动端文档覆盖所有 `/api/v1` 接口和九种动作，
+参数选项从 capabilities / models 读取，可复制 curl 与 Python 客户端示例。
+「测试」直接发送真实请求，不弹确认框；运动卡带「会动机器人」标记，动作自动轮询终态并支持取消。
+顶部常驻急停、停止及连接状态；路线和全流程仍只接受急停。
+安装脚本会把 `api_docs.html` 复制到 `/root/`，与 `web_move.py` 同目录。
