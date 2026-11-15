@@ -52,9 +52,17 @@ Single column, Chinese labels, works on a phone. From top to bottom:
   停止 button; the line below shows the last result (steps and end reason). It needs the policy server
   container (`sandbag-step4999-policy`) running and refuses to start while anything else moves.
   Below it, small arm buttons: 起始姿态 (training start pose), 抬起 (raise), 放下 (lower).
+- **路线**: 绿 → 红 runs `001` → pause 10 s → `002`; 红 → 绿 runs `003` → pause 10 s → `004`.
+  The card shows the current path, pause countdown and last result.
+  Place the robot at the start with the recorded heading first. Routes use Run all's continuous corner
+  handling, pause only between paths (`PATH_PAUSE`), and keep running if the page disconnects.
+  Once started, a route accepts only 急停 (including during a pause); every other web control command,
+  including 停 and release, is refused with HTTP 409. Page polling only refreshes the display:
+  the server supplies the robot heartbeat, so no phone connection or requests are required to finish.
+  Missing paths and busy starts are refused. Robot-side fault checks still apply.
 - **底盘**: direction pad 前进 / 后退 / 左 / 右 and 逆时针 / 顺时针. Click (< 0.3 s): 10 cm or 15 deg.
   Press and hold: 0.10 m/s or 0.2 rad/s until release. The centre 停 is the soft STOP: chassis, paths,
-  arm script and VLA run stop, arms hold where they are.
+  arm script and VLA run stop, arms hold where they are. During a route, use 急停 instead.
 - **路径与轨迹** (folded): wheel-odometry pose and robot footprint; recording (start / stop / save as CSV,
   copy in `/root/ta2_trails/`, reset origin); paths from `/root/ta2_paths/` plus any loaded from the
   browser. Run follows one path from the current pose (its first point is anchored there); Run all follows

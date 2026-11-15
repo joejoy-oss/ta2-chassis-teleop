@@ -2,7 +2,7 @@
 """TA2 web remote (chassis, arms, VLA grasp). Runs on B70.
 
 Page (Chinese, single column, phone friendly): top bar with connection / API mode / current activity
-and the only red button, 急停 (E-STOP, also the Esc key); then VLA 抓取 (main), 底盘, and folded
+and the only red button, 急停 (E-STOP, also the Esc key); then VLA 抓取 (main), 路线, 底盘, and folded
 路径与轨迹 and 日志 sections. The chassis centre 停 is the soft STOP described below.
 
 Start:  nohup python3 /root/web_move.py > /root/web_move.log 2>&1 &
@@ -22,6 +22,9 @@ each starting where the previous one ended. Corners are driven through without s
 the robot stands still for PATH_PAUSE seconds after each path before starting the next one. Paths do
 not depend on the page: once started they run to the end even if the browser closes or the phone
 loses Wi-Fi; only STOP or E-STOP ends them early (plus the robot-side checks in teleop.py).
+Routes: green to red (001 -> 002) and red to green (003 -> 004) use the same sequence runner.
+Once a route starts, only E-STOP is accepted; all other web control commands are refused,
+including STOP and release. Page polling is optional; the server supplies the path heartbeat.
 
 Arms: "Raise arms" / "Lower arms" / "Start pose" run arm/arm_pose.py (standalone, /outputs/arm/ in the container)
 as a separate process; its output goes to the log. Arms and chassis never move at the same time.
@@ -56,6 +59,7 @@ DIRS = ("forward", "back", "left", "right", "ccw", "cw")
 TRAIL_DIR = os.environ.get("TRAIL_DIR", "/root/ta2_trails")
 PATH_DIR = os.environ.get("PATH_DIR", "/root/ta2_paths")
 PATH_PAUSE = float(os.environ.get("PATH_PAUSE", "10"))   # Run all: seconds to stand still after each path
+ROUTES = {"g2r": ("绿 → 红", ["001", "002"]), "r2g": ("红 → 绿", ["003", "004"])}
 ARM_CMD = os.environ.get("ARM_CMD", f"docker exec {CONTAINER} /usr/local/bin/openpi-client-entrypoint.sh "
                                     "python3 -u /outputs/arm/arm_pose.py").split()
 ARM_STOP = os.environ.get("ARM_STOP", f"docker exec {CONTAINER} pkill -INT -f arm_pose.py").split()
@@ -70,7 +74,8 @@ POLICY_CONTAINER = os.environ.get("POLICY_CONTAINER", "sandbag-step4999-policy")
 ARM_TIME = {"raise": 8, "lower": 15, "start": 10}    # seconds; lower is slower on purpose
 # start = VLA training start pose (arm/train_start_pose.json, first frame of a training episode)
 paths = {}                  # name -> {"points": [[x, y, th], ...], "length": m, "end": [dx, dy]}
-seq = {"names": [], "i": -1, "abort": False}
+seq = {"names": [], "i": -1, "abort": False, "route": None, "pause_until": None}
+seq_lock = threading.RLock()  # serialize web commands and sequence starts, including nested dispatch
 path_done = threading.Event()
 path_result = {"why": None}
 last_poll = [0.0]
@@ -79,7 +84,7 @@ state = {"connected": False, "moving": None, "mode_ok": None, "last": "starting"
          "pose": [0.0, 0.0, 0.0], "epoch": int(time.time()),    # epoch changes on restart and on trail reset
          "recording": False, "rec_t0": None, "active_path": None, "path_anchor": [0.0, 0.0, 0.0],
          "arm": None, "arm_last": "arms: not moved yet", "estop": False, "estop_last": None,
-         "vla": None, "vla_last": "VLA: not run yet"}
+         "vla": None, "vla_last": "VLA: not run yet", "route_last": None}
 trail = []                  # [[x, y, th, t], ...]; metres / rad / s; x = right, y = forward of the origin
 TRAIL_MAX = 20000
 log = collections.deque(maxlen=60)
@@ -128,32 +133,53 @@ def load_path_dir():
 
 
 def run_sequence(names):
-    seq.update(names=names, i=-1, abort=False)
+    # The request handler reserves names and clears abort before starting this worker.
+    # Never clear abort here: STOP may already have arrived after the request.
+    route = seq["route"]
+    n, result = names[0], "finished"
     note("run all: " + " -> ".join(names))
-    for i, n in enumerate(names):
-        if seq["abort"]:
-            break
-        seq["i"] = i
-        path_done.clear()
-        path_result["why"] = None
-        send("path_cmd", n)
-        if not path_done.wait(timeout=3 * paths[n]["length"] / 0.10 + 30):
-            send("stop")
-            note(f"run all: {n} did not finish, stopped")
-            break
-        if path_result["why"] != "path done":
-            note(f"run all: stopped at {n} ({path_result['why']})")
-            break
-        if i < len(names) - 1 and PATH_PAUSE > 0:      # stand still between paths, STOP / E-STOP ends it
-            note(f"run all: {n} done, pausing {PATH_PAUSE:.0f} s before {names[i + 1]}")
-            end = time.monotonic() + PATH_PAUSE
-            while time.monotonic() < end and not seq["abort"]:     # only STOP / E-STOP cancel the rest
-                time.sleep(0.1)
-        else:
-            time.sleep(1.0)
-    else:
-        note("run all: finished")
-    seq.update(names=[], i=-1)
+    try:
+        for i, n in enumerate(names):
+            with seq_lock:
+                if seq["abort"]:
+                    result = f"stopped before {n}"
+                    break
+                seq["i"] = i
+                path_done.clear()
+                path_result["why"] = None
+                if not send("path_cmd", n):
+                    raise RuntimeError("teleop disconnected")
+            deadline = time.monotonic() + 3 * paths[n]["length"] / 0.10 + 30
+            while not path_done.wait(timeout=0.1) and not seq["abort"]:
+                if time.monotonic() >= deadline:
+                    send("stop")
+                    path_result["why"] = "timeout"
+                    break
+            why = "stopped" if seq["abort"] else path_result["why"]
+            if why != "path done":
+                result = f"stopped at {n} ({why})"
+                break
+            if i < len(names) - 1 and PATH_PAUSE > 0:
+                note(f"run all: {n} done, pausing {PATH_PAUSE:.0f} s before {names[i + 1]}")
+                seq["pause_until"] = time.time() + PATH_PAUSE
+                end = time.monotonic() + PATH_PAUSE
+                while time.monotonic() < end and not seq["abort"]:
+                    time.sleep(0.1)
+                seq["pause_until"] = None
+            elif not route:     # retain the ordinary Run all settling delay
+                time.sleep(1.0)
+        if seq["abort"] and result == "finished":
+            result = f"stopped at {n} (stopped)"
+    except Exception as e:  # noqa: BLE001
+        result = f"stopped at {n} (error: {e})"
+        send("stop")
+    finally:
+        with seq_lock:
+            note("run all: " + result)
+            if route:
+                state["route_last"] = ROUTES[route][0] + ": " + result
+                note(state["route_last"])
+            seq.update(names=[], i=-1, route=None, pause_until=None)
 
 
 def run_arm(action):
@@ -250,6 +276,8 @@ def trail_csv():
 
 
 def ensure_container():
+    if os.environ.get("TELEOP_CMD"):     # offline/custom teleop does not need Docker
+        return
     r = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], capture_output=True, text=True)
     if CONTAINER in r.stdout.split():
         return
@@ -310,6 +338,9 @@ def reader(p):
         elif e == "error":
             state["last"] = "error: " + ev.get("msg", "")
             note(state["last"])
+            if seq["names"]:
+                path_result["why"] = state["last"]
+                path_done.set()
         elif e == "pose":
             x, y, th = ev["x"], ev["y"], ev["th"]
             state["pose"] = [x, y, th]
@@ -324,6 +355,9 @@ def reader(p):
             note("teleop exited")
     state["connected"] = False
     state["moving"] = None
+    if seq["names"]:
+        path_result["why"] = "teleop disconnected"
+        path_done.set()
 
 
 def teleop():
@@ -389,6 +423,12 @@ button:disabled{opacity:.45;cursor:not-allowed}
 button.on,.primary{background:var(--solid);border-color:var(--solid);color:var(--on-solid)}
 .primary:hover:not(:disabled){background:var(--accent);color:var(--on-solid)}
 #vlarun{width:100%;min-height:64px;font-size:18px;font-weight:600}
+.route-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.route-buttons button{min-height:88px;padding:12px 8px}
+.route-title{display:flex;align-items:center;justify-content:center;gap:6px;font-size:18px;font-weight:600}
+.route-buttons small{display:block;color:var(--muted);font-size:12px;margin-top:5px}
+.route-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.route-dot.green{background:#388e3c}.route-dot.red{background:#d84343}
 .estop{background:var(--stop)!important;border-color:var(--stop)!important;color:#fff;font-weight:700;font-size:16px;padding:10px 18px;grid-column:2;grid-row:1}
 #vla-progress{margin-top:16px}
 .progress-row{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:10px}
@@ -446,6 +486,16 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
     </div>
   </div></section>
   <section class="card"><div class="body">
+    <h2>路线</h2>
+    <div class="route-buttons">
+      <button data-route="g2r" disabled><span class="route-title"><span class="route-dot green" aria-hidden="true"></span>绿 → 红<span class="route-dot red" aria-hidden="true"></span></span><small>001 → 停 10 秒 → 002</small></button>
+      <button data-route="r2g" disabled><span class="route-title"><span class="route-dot red" aria-hidden="true"></span>红 → 绿<span class="route-dot green" aria-hidden="true"></span></span><small>003 → 停 10 秒 → 004</small></button>
+    </div>
+    <p id="routest" class="status-line" role="status">上次：尚未运行</p>
+    <p class="hint">路径从当前位置出发：先把机器人停在起点、朝向与录制时一致</p>
+    <p class="hint">开始后仅接受急停；关闭页面或手机断网仍会继续执行</p>
+  </div></section>
+  <section class="card"><div class="body">
     <h2>底盘</h2>
     <div class="pad">
       <span></span><button data-d="forward" disabled>▲ 前进</button><span></span>
@@ -501,7 +551,8 @@ const directions={forward:'前进',back:'后退',left:'向左',right:'向右',cc
 const armActions={start:'起始姿态',raise:'抬起',lower:'放下'};
 function uiText(value){
   let t=String(value??'');
-  const phrases=[['arms: not moved yet','尚未移动'],['VLA: not run yet','尚未运行'],
+  const phrases=[['route running: only E-STOP is accepted','路线执行中，仅接受急停'],
+    ['arms: not moved yet','尚未移动'],['VLA: not run yet','尚未运行'],
     ['busy: wait until the robot is still','忙碌中，请等待机器人静止'],['arms are moving','手臂或抓取任务正在运行'],
     ['not in API mode or chassis disabled (or mode unknown yet)','非 API 模式、底盘未启用或模式未知'],
     ['no fresh wheel feedback from the robot','尚未收到机器人最新轮速反馈'],['busy, path not started','忙碌中，路径未启动'],
@@ -511,6 +562,8 @@ function uiText(value){
     ['dead-man timeout','心跳超时'],['step done','点按移动已完成'],['hold timeout','长按已达时限'],
     ['page closed or connection lost','页面已关闭或连接中断'],['wheel feedback lost','轮速反馈中断'],
     ['hold limit','长按达到时限'],['stuck: no progress for','移动受阻，未取得进展已持续'],
+    ['unknown route','未知路线'],['missing paths: ','未加载路径：'],['teleop disconnected','机器人连接已断开'],
+    ['stopped before ','已中止，未开始路径 '],['stopped at ','已中止于路径 '],['finished','已完成'],
     ['trail is empty','轨迹为空'],['starting','正在启动'],['ready','就绪'],['stopped','已停止'],
     ['released','已松开'],['release','松开'],['timeout','超时'],['busy','忙碌中'],['done','已完成'],['error','错误']];
   for(const [from,to] of phrases)t=t.split(from).join(to);
@@ -564,6 +617,17 @@ armRaise.onclick=async()=>{const r=await post('/arm/raise');if(r.error)st.textCo
 armLower.onclick=async()=>{const r=await post('/arm/lower');if(r.error)st.textContent=uiText(r.error)};
 armStart.onclick=async()=>{const r=await post('/arm/start');if(r.error)st.textContent=uiText(r.error)};
 const vlaBtn=document.getElementById('vlarun'),vlaSt=document.getElementById('vlast');
+const routeBtns=[...document.querySelectorAll('button[data-route]')],routeSt=document.getElementById('routest');
+const routeLabels={g2r:'绿 → 红',r2g:'红 → 绿'};
+routeBtns.forEach(b=>b.onclick=async()=>{const r=await post('/route/'+b.dataset.route);if(r.error)routeSt.textContent=uiText(r.error)});
+function updateRoute(s){
+  routeBtns.forEach(b=>b.disabled=!!s.moving||s.seq.length>0||!!s.arm||!!s.vla||!!s.estop||!s.connected);
+  document.getElementById('stop').disabled=!!s.route;
+  if(!s.route){routeSt.textContent='上次：'+(s.route_last?uiText(s.route_last):'尚未运行');return}
+  const title=routeLabels[s.route]+'：',i=s.seq_i;
+  routeSt.textContent=s.pause_left>0?title+'停留中，还剩 '+Math.ceil(s.pause_left)+' 秒，然后执行 '+s.seq[i+1]:
+    i<0?title+'准备中…':title+'执行 '+s.seq[i]+'（'+(i+1)+'/'+s.seq.length+'）';
+}
 vlaBtn.onclick=async()=>{const r=await post('/vla');if(r.error)st.textContent=uiText(r.error)};
 const vlaProgress=document.getElementById('vla-progress'),vlaMeter=document.getElementById('vlaprogress'),vlaElapsed=document.getElementById('vlaelapsed');
 let vlaStarted=null;
@@ -650,6 +714,7 @@ async function poll(){try{
   vlaSt.textContent=uiText(s.vla_last);
   if(s.vla){if(vlaStarted===null)vlaStarted=performance.now()}else vlaStarted=null;
   vlaProgress.hidden=!s.vla;updateVlaProgress();
+  updateRoute(s);
   armRaise.disabled=!still;armLower.disabled=!still;armStart.disabled=!still;vlaBtn.disabled=!still||!!s.estop;
   st.textContent=t;st.title=t;
   const busyStep=s.moving&&(s.moving.startsWith('step')||s.moving.startsWith('path'))||s.seq.length>0||!!s.arm;
@@ -658,7 +723,7 @@ async function poll(){try{
   document.getElementById('runall').disabled=pathBusy;
   moves.forEach(x=>x.disabled=!press&&(busyStep||!s.connected));
   lg.textContent=s.log.join('\n');lg.scrollTop=lg.scrollHeight;draw();
-}catch(e){connectionText.textContent='B70 不可达';connectionEl.className='connection';st.textContent='无法获取机器人状态';st.title=st.textContent;if(!press)moves.forEach(x=>x.disabled=true)}}
+}catch(e){connectionText.textContent='B70 不可达';connectionEl.className='connection';st.textContent='无法获取机器人状态';st.title=st.textContent;routeBtns.forEach(b=>b.disabled=true);if(!press)moves.forEach(x=>x.disabled=true)}}
 poll();setInterval(poll,300);
 </script></body></html>"""
 
@@ -694,13 +759,43 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 since = 0
             since = min(since, len(trail))
+            with seq_lock:
+                pause_until = seq["pause_until"]
+                sequence = {"seq": seq["names"], "seq_i": seq["i"], "route": seq["route"],
+                            "pause_left": max(0, pause_until - time.time()) if pause_until else 0,
+                            "route_last": state["route_last"]}
             self._send(200, {**state, "log": list(log), "trail_from": since, "trail": trail[since:],
-                             "seq": seq["names"], "seq_i": seq["i"], "path_names": sorted(paths)})
+                             **sequence, "path_names": sorted(paths)})
         else:
             self._send(404, {"error": "not found"})
 
     def do_POST(self):
+        # Check and dispatch atomically: a delayed STOP/release from the phone must
+        # never slip past this gate as a route is being started.
+        if self.path.strip("/") == "estop":   # E-STOP never waits for the lock (an upload may hold it)
+            return self._do_POST()
+        with seq_lock:
+            if seq["route"]:
+                return self._send(409, {"error": "route running: only E-STOP is accepted"})
+            return self._do_POST()
+
+    def _do_POST(self):
         parts = self.path.strip("/").split("/")
+        if parts[0] == "route":
+            if len(parts) != 2 or parts[1] not in ROUTES:
+                return self._send(400, {"error": "unknown route"})
+            route = parts[1]
+            names = ROUTES[route][1][:]
+            missing = [n for n in names if n not in paths]
+            if missing:
+                return self._send(400, {"error": "missing paths: " + ", ".join(missing)})
+            with seq_lock:
+                if state["moving"] or seq["names"] or state["arm"] or state["vla"] or state["estop"]:
+                    return self._send(409, {"error": "busy: wait until the robot is still"})
+                last_poll[0] = time.monotonic()
+                seq.update(names=names, i=-1, abort=False, route=route, pause_until=None)
+                threading.Thread(target=run_sequence, args=(names,), daemon=True).start()
+            return self._send(200, {"ok": True})
         if parts[0] in ("step", "hold", "paths") and (state["arm"] or state["vla"]) and parts[:2] != ["paths", "upload"]:
             return self._send(409, {"error": "arms are moving"})
         if parts[0] == "vla":
@@ -754,8 +849,13 @@ class Handler(BaseHTTPRequestHandler):
                 ok = send("path_cmd", parts[2])
                 return self._send(200 if ok else 503, {"ok": ok})
             if parts[1] == "runall" and paths:
-                last_poll[0] = time.monotonic()
-                threading.Thread(target=run_sequence, args=(sorted(paths),), daemon=True).start()
+                with seq_lock:
+                    if state["moving"] or seq["names"]:
+                        return self._send(409, {"error": "busy"})
+                    last_poll[0] = time.monotonic()
+                    names = sorted(paths)
+                    seq.update(names=names, i=-1, abort=False, route=None, pause_until=None)
+                    threading.Thread(target=run_sequence, args=(names,), daemon=True).start()
                 return self._send(200, {"ok": True})
             self._send(400, {"error": "unknown path"})
         elif parts[0] == "reset":
@@ -786,18 +886,22 @@ class Handler(BaseHTTPRequestHandler):
             note("E-STOP pressed")
             if not state["estop"]:
                 state["estop"] = True
+                seq["abort"] = True               # plain assignment, no lock: E-STOP must not block
                 threading.Thread(target=estop, daemon=True).start()
             self._send(200, {"ok": True})
         elif parts[0] in ("release", "stop"):
             if parts[0] == "stop":
-                seq["abort"] = True
+                with seq_lock:
+                    seq["abort"] = True
+                    ok = send("stop")
                 if state["arm"]:
                     subprocess.run(ARM_STOP, capture_output=True)
                     note("STOP: arm script interrupted")
                 if state["vla"]:
                     subprocess.run(DEXEC + ["pkill", "-INT", "-f", ESTOP_PROCS], capture_output=True)
                     note("STOP: VLA interrupted (arms hold where they are)")
-            ok = send(parts[0])
+            else:
+                ok = send(parts[0])
             if parts[0] == "stop":
                 note("STOP pressed")
             self._send(200 if ok else 503, {"ok": ok})
