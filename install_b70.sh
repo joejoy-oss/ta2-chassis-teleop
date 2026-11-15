@@ -10,6 +10,7 @@ install -m 755 move.sh web_move.py /root/
 mkdir -p /root/openpi-xpu/client/outputs/arm
 install -m 644 arm/arm_pose.py arm/train_start_pose.json /root/openpi-xpu/client/outputs/arm/
 install -m 755 arm/arm.sh /root/
+install -m 755 vla/vla_run.sh /root/
 cp -n paths/*.csv /root/ta2_paths/ 2>/dev/null || true   # keep existing paths with the same name
 OLD=$(ss -ltnpH sport = :8088 | grep -o "pid=[0-9]*" | cut -d= -f2 || true)
 [ -n "$OLD" ] && kill "$OLD" && sleep 1.5
