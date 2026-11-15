@@ -125,6 +125,11 @@ class TA2Client:
     def arm_pose(self, pose, wait=False, timeout=300, poll=0.5, raise_on_fail=False):
         return self._run("arm.pose", {"pose": pose}, wait, timeout, poll, raise_on_fail)
 
+    def arm_move(self, hand, forward_cm=0, left_cm=0, up_cm=0, wait=False, timeout=300, poll=0.5, raise_on_fail=False):
+        """Straight-line end-effector move in the arm's shoulder frame (x forward, y left, z up), -15..15 cm each."""
+        return self._run("arm.move", {"hand": hand, "forward_cm": forward_cm, "left_cm": left_cm, "up_cm": up_cm},
+                         wait, timeout, poll, raise_on_fail)
+
     def arm_down(self, hand, cm, wait=False, timeout=300, poll=0.5, raise_on_fail=False):
         return self._run("arm.down", {"hand": hand, "cm": cm}, wait, timeout, poll, raise_on_fail)
 

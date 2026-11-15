@@ -37,6 +37,16 @@ class _ModuleServer(_MissionServer):
 
 
 class ModuleAPI(_ModuleServer, unittest.TestCase):
+    def test_arm_move_forward_and_validation(self):
+        result = self.client.arm_move("right", forward_cm=5, wait=True, poll=.03)
+        self.assertEqual(result["status"], "succeeded", result)
+        self.client.arm_move("left", forward_cm=-2.5, left_cm=1, up_cm=15, wait=True, poll=.03)
+        self.assertEqual(self.commands("move"), [["right", "5", "0", "0"], ["left", "-2.5", "1", "15"]])
+        for kw in ({"forward_cm": 15.01}, {"up_cm": -16}, {"forward_cm": 0}, {"left_cm": "5"}, {"forward_cm": True}):
+            self.error("BAD_REQUEST", 400, self.client.arm_move, "left", **kw)
+        self.error("BAD_REQUEST", 400, self.client.arm_move, "both", forward_cm=5)
+        self.assertIn("arm.move", self.client.capabilities()["actions"])
+
     def test_arm_down_both_sides_and_validation(self):
         for side, cm in (("left", .5), ("right", 15)):
             result = self.client.arm_down(side, cm, wait=True, poll=.03)

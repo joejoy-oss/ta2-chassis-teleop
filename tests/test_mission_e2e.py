@@ -37,7 +37,7 @@ class _MissionServer:
                "MISSION_SCENARIO": self.scenario, "PYTHONPATH": str(ROOT / "tests/fakeros"),
                "TELEOP_CMD": shlex.join([sys.executable, "-u", str(ROOT / "teleop.py")]),
                "VLA_CMD": shlex.join(fake + ["vla"]), "ARM_CMD": shlex.join(fake + ["arm"]),
-               "ARM_DOWN_CMD": shlex.join(fake + ["down"]), "MONITOR_CMD": shlex.join(fake + ["monitor"]),
+               "ARM_DOWN_CMD": shlex.join(fake + ["down"]), "ARM_MOVE_CMD": shlex.join(fake + ["move"]), "MONITOR_CMD": shlex.join(fake + ["monitor"]),
                "ESTOP_DEXEC": shlex.join(fake + ["dex"]), "ARM_STOP": shlex.join(fake + ["dex", "pkill"]),
                "PATH_DIR": str(paths), "TRAIL_DIR": str(self.dir / "trails"),
                "MISSION_LOG_DIR": str(self.dir / "missions"), "ACTION_LOG": str(self.dir / "actions.jsonl"),

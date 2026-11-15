@@ -138,6 +138,13 @@ POST 控制端点不需要请求体；启动动作使用 `Content-Type: applicat
 | `mission.run` | `{"attempts":5,"prompt":"抓取沙包","port":8000}`（均可省略） | 预检通过后异步执行全流程；监测抓取成功并用同一只手放置 |
 | `odom.reset` | `{}` | 发送现有 `reset_pose`，发送成功立即 succeeded |
 
+`arm.move`：`{"hand":"left|right","forward_cm":5,"left_cm":0,"up_cm":0}`，末端沿直线平移、姿态不变、夹爪保持。
+坐标为该手臂的肩部坐标系：x 向前、y 向机器人左侧、z 向上（由 MuJoCo 标定确认：两坐标系旋转 < 0.4°，左右肩偏移 ±0.22 m，
+与官方文档附录 A 的 ±220 mm 一致）。每个方向 −15～15 cm，至少一个方向 ≥ 0.1 cm；用标定过的 MuJoCo 逆运动学求关节目标，
+够不到、碰关节限位或路径偏离直线则拒绝（`SCRIPT_ERROR`，输出里有原因），向下最低到末端 z = −0.40 m。`arm.down` 是它的特例
+（forward 0、left 0、up −cm）。官方的末端控制话题 `/api/<arm>_arm/target_pose` 需要在机器人「系统配置」里把手臂切到末端模式并重启，
+与 VLA 和其他动作所需的关节模式冲突，因此不使用。
+
 参数必须匹配动作类型；无参数动作可以省略 params。`mission.run` 保留现有 attempts/prompt/port/rtc 参数与行为。
 
 `mission.run` 的 `flow`（可选）：`v1`（默认，第 1–6 步）、`v2`（全流程 v2：1–6 步后接第 7 步语音交互模块）、

@@ -96,6 +96,7 @@ if not isinstance(saved_model, str) or saved_model not in VLA_MODELS:
     saved_model = DEFAULT_MODEL
 ARM_TIME = {"raise": 8, "lower": 15, "start": 10, "start_hold": 10, "down5": 8, "open_right": 3, "close_right": 3, "open_left": 3, "close_left": 3}
 ARM_DOWN_CMD = shlex.split(os.environ.get("ARM_DOWN_CMD", "/root/arm_down.sh"))   # base command; callers append side and cm
+ARM_MOVE_CMD = shlex.split(os.environ.get("ARM_MOVE_CMD", "/root/arm_move.sh"))   # + side forward_cm left_cm up_cm
 # start = VLA training start pose (arm/train_start_pose.json, first frame of a training episode)
 paths = {}                  # name -> {"points": [[x, y, th], ...], "length": m, "end": [dx, dy]}
 seq = {"names": [], "i": -1, "abort": False, "route": None, "pause_until": None}
@@ -172,7 +173,7 @@ def end_action(action, result, success=False, code=None, release=True):
             elif text in ("stopped", "released") or text.startswith("stopped before ") or "cancel" in text:
                 code = "STOPPED"
             else:
-                code = "SCRIPT_ERROR" if action["type"] in ("arm.pose", "arm.down", "vla.grasp") else "ACTION_FAILED"
+                code = "SCRIPT_ERROR" if action["type"] in ("arm.pose", "arm.down", "arm.move", "vla.grasp") else "ACTION_FAILED"
         action.update(status="succeeded" if success else "aborted" if code in ("ESTOP", "STOPPED") else "failed",
                       ended_at=timestamp(), result=result,
                       error=None if success else {"code": code, "message": why})
@@ -211,11 +212,12 @@ def start_sequence(names, route=None, action=None):
     threading.Thread(target=run_sequence, args=(names, action), daemon=True).start()
 
 
-def start_arm(pose, action=None, down=None):
+def start_arm(pose, action=None, down=None, move=None):
     state["arm"] = pose
-    detail = f"{down[0]}, {down[1]} cm" if down else f"{ARM_TIME[pose]} s"
+    detail = (f"{move[0]}, forward {move[1]:g} / left {move[2]:g} / up {move[3]:g} cm" if move else
+              f"{down[0]}, {down[1]} cm" if down else f"{ARM_TIME[pose]} s")
     note(f"arms: {pose} ({detail})")
-    threading.Thread(target=run_arm, args=(pose, action, down), daemon=True).start()
+    threading.Thread(target=run_arm, args=(pose, action, down, move), daemon=True).start()
 
 
 def model_rtc(model):
@@ -533,7 +535,7 @@ def end_arm_runner():
             pass
 
 
-def run_arm(action, record=None, down=None):
+def run_arm(action, record=None, down=None, move=None):
     rc, last = None, ""
     tail = collections.deque(maxlen=8)
     try:
@@ -542,7 +544,10 @@ def run_arm(action, record=None, down=None):
             return
         if action == "down5":
             down = ("right", 5)
-        cmd = ARM_DOWN_CMD + [down[0], str(down[1])] if down else ARM_CMD + [action, "--time", str(ARM_TIME[action])]
+        if move:
+            cmd = ARM_MOVE_CMD + [move[0]] + [f"{v:g}" for v in move[1:]]
+        else:
+            cmd = ARM_DOWN_CMD + [down[0], str(down[1])] if down else ARM_CMD + [action, "--time", str(ARM_TIME[action])]
         with seq_lock:
             if state["estop"] or (record and record["status"] != "running"):
                 return
@@ -569,7 +574,7 @@ def run_arm(action, record=None, down=None):
             arm_proc[0] = None
             state["arm"] = None
             end_action(record, {"why": state["arm_last"], "returncode": rc,
-                                "output": "\n".join(tail) if record and record["type"] == "arm.down" else last}, rc == 0)
+                                "output": "\n".join(tail) if record and record["type"] in ("arm.down", "arm.move") else last}, rc == 0)
 
 
 vla_proc = [None]   # host-side VLA runner (vla_run.sh); STOP / E-STOP end it so it cannot start a later step
@@ -880,6 +885,8 @@ ACTION_PARAMS = {
     "route.run": {"route": list(ROUTES)},
     "arm.pose": {"pose": list(ARM_TIME)},
     "arm.down": {"hand": ["left", "right"], "cm": "number from 0.5 to 15"},
+    "arm.move": {"hand": ["left", "right"], "forward_cm": "optional number -15..15 (shoulder frame x, + = forward)",
+                 "left_cm": "optional number -15..15 (y, + = robot's left)", "up_cm": "optional number -15..15 (z, + = up)"},
     "vla.grasp": {"model": "optional registered model id (default: selected model)",
                   "seconds": "optional number from 1 to 120 (default: model seconds)",
                   "stop_on_grasp": "optional boolean (default: false)"},
@@ -903,6 +910,14 @@ def start_action(body):
         if (set(params) != {"hand", "cm"} or params["hand"] not in ("left", "right")
                 or type(params["cm"]) not in (int, float) or not .5 <= params["cm"] <= 15):
             raise APIError(400, "BAD_REQUEST", "arm.down requires hand left/right and cm from 0.5 to 15")
+    elif kind == "arm.move":
+        dist = {k: params.get(k, 0) for k in ("forward_cm", "left_cm", "up_cm")}
+        if (set(params) - {"hand", "forward_cm", "left_cm", "up_cm"} or params.get("hand") not in ("left", "right")
+                or any(type(v) not in (int, float) or not -15 <= v <= 15 for v in dist.values())
+                or max(abs(v) for v in dist.values()) < .1):
+            raise APIError(400, "BAD_REQUEST", "arm.move requires hand left/right and forward_cm/left_cm/up_cm "
+                           "from -15 to 15 (at least one of them 0.1 cm or more)")
+        params = {"hand": params["hand"], **dist}
     elif kind == "vla.grasp":
         if set(params) - set(spec):
             raise APIError(400, "BAD_REQUEST", "vla.grasp parameters: model, seconds, stop_on_grasp")
@@ -980,6 +995,8 @@ def start_action(body):
             start_arm(params["pose"], action)
         elif kind == "arm.down":
             start_arm("down", action, (params["hand"], params["cm"]))
+        elif kind == "arm.move":
+            start_arm("move", action, move=(params["hand"], params["forward_cm"], params["left_cm"], params["up_cm"]))
         elif kind == "vla.grasp":
             start_vla(action, params["model"], monitor)
         else:
