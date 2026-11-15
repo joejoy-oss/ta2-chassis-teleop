@@ -173,9 +173,9 @@ stood during data collection.
 
 监视器 `arm/grasp_monitor.py` 在客户端容器中由 `python3 -u` 运行，每 0.1 秒输出 JSON。
 关节、夹爪、末端各自必须在 0.3 秒内有有效反馈；一条流新鲜不能掩盖另一条停滞。
-判定为 grip_pos 在 [0.12, 0.75] rad、grip_eff ≤ −1.0 N·m、
+判定为 grip_pos 在 [0.06, 0.75] rad（真机空夹闭合实测：右爪 −0.047 rad、左爪 −0.059 rad；夹沙包边缘 p2 为 0.084 rad、中位 0.36–0.42 rad）、grip_eff ≤ −1.0 N·m（真机闭合/PAUSE 实测 ≤ −1.69 N·m，张开 +0.07~+0.20 N·m）、
 相对该次闭合高度抬升 ≥ 0.04 m，连续 1.5 秒。holding 仅使用位置/力矩条件。
-阈值为初值，空夹位置和力矩仍须真机标定；反馈丢失不会作为普通失败继续尝试。
+反馈丢失不会作为普通失败继续尝试。
 
 配置集中在 `mission.py` 顶部，并支持同名环境变量：ATTEMPTS、ATTEMPT_S、PROMPT、ARRIVE_PAUSE、
 PLACE_CM、HOLD_POS_MIN/MAX、HOLD_EFF_MAX、LIFT_MIN、HOLD_PERSIST、MISSION_LOG_DIR。

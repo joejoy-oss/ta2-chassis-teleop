@@ -62,7 +62,8 @@ class GraspTests(unittest.TestCase):
             self.assertFalse(grasp_update(None, sample(z=bad), 1)["success"])
 
     def test_boundaries(self):
-        self.assertTrue(holding(sample(pos=.12, eff=-1)))
+        self.assertTrue(holding(sample(pos=.06, eff=-1)))
+        self.assertFalse(holding(sample(pos=.059, eff=-1)))
         self.assertTrue(holding(sample(pos=.75, eff=-1)))
         self.assertFalse(holding(sample(eff=-.99)))
 
