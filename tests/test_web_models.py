@@ -93,7 +93,7 @@ class ModelSelectionTests(unittest.TestCase):
                 with patch.object(self.web, "ensure_container"), patch.object(self.web.subprocess, "Popen", return_value=fake) as launch, patch.dict(os.environ):
                     os.environ.pop("VLA_CMD", None)
                     self.web.run_vla("bound_trial", model_id)
-                self.assertEqual(launch.call_args.args[0], model["command"] + ["bound_trial", "60", "1.0"])
+                self.assertEqual(launch.call_args.args[0], model["command"] + ["bound_trial", str(model["seconds"]), str(model["speed"])])
                 self.assertIn(model["name"], self.web.state["vla_last"])
                 self.assertIsNone(self.web.state["vla"])
                 self.assertIsNone(self.web.state["vla_model"])

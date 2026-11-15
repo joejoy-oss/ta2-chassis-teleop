@@ -1,22 +1,22 @@
 {
- "source": "episode_000002.parquet frame0",
+ "source": "blend chosen 2026-11-15 by offline hand-selection test on live probes (step5000/10000/13000): left = midpoint of old pose (sandbag_trial_v1 ep2 frame0) and v3 mean start; right = v3 mean start (122 eps). Correct arm: step13000 98%, step10000 95%, step5000 88% (old pose 89/85/85%). Pure v3 mean/ep76 make the model pick the left arm for right targets.",
  "left": [
-  -0.048526763916015625,
-  0.7524547576904297,
-  -0.7336578369140625,
-  2.1192636489868164,
-  0.9791688919067383,
-  0.7915830612182617,
-  0.26181507110595703
+  -0.1793,
+  0.7062,
+  -0.6018,
+  2.0896,
+  0.7696,
+  0.4208,
+  0.3209
  ],
  "right": [
-  -0.12601661682128906,
-  -0.8913283348083496,
-  0.8955411911010742,
-  -1.911353588104248,
-  -0.5077104568481445,
-  -0.6120529174804688,
-  0.060802459716796875
+  0.06,
+  -0.75,
+  0.71,
+  -2.05,
+  -0.6,
+  -0.07,
+  -0.25
  ],
  "gripper_cmd": {
   "left": 0.0,

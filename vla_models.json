@@ -1,6 +1,32 @@
 {
-  "default": "grasp_v3_step10000",
+  "default": "grasp_v3_step13000",
   "models": [
+    {
+      "id": "grasp_v3_step13000",
+      "name": "最新模型 v3 · 13000 步",
+      "training": "122 段演示 · 11 月 15 日",
+      "prompt": "抓取红色沙包",
+      "port": 8004,
+      "container": "grasp-v3-step13000-policy",
+      "command": [
+        "/root/vla_grasp_v3_step13000.sh"
+      ],
+      "seconds": 60,
+      "speed": 1.0
+    },
+    {
+      "id": "grasp_v3_step13000_rtc",
+      "name": "最新模型 v3 · 13000 步 · RTC 流畅模式",
+      "training": "122 段演示 · 11 月 15 日",
+      "prompt": "抓取红色沙包",
+      "port": 8004,
+      "container": "grasp-v3-step13000-policy",
+      "command": [
+        "/root/vla_grasp_v3_step13000_rtc.sh"
+      ],
+      "seconds": 60,
+      "speed": 1.0
+    },
     {
       "id": "grasp_v3_step10000",
       "name": "最新模型 v3 · 10000 步",

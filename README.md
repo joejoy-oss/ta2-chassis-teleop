@@ -223,3 +223,14 @@ models remain available. Checkpoint 8000 is downloaded only and is not registere
 B70 JAX weights: `/data/ta2/model_exports/grasp_v3_step10000`.
 Converted weights: `/data/ta2/model_exports/grasp_v3_step10000_pytorch`.
 Deployment and offline smoke evidence: `/data/ta2/model_exports/grasp_v3_eval/step10000_deployment`.
+
+
+## v3 checkpoint 13000 deployment (2026-11-15)
+
+The latest registered checkpoint is v3 step 13000, with the same 122 demonstrations and prompt
+抓取红色沙包. The independent `grasp-v3-step13000-policy` service uses GPU0 / localhost port 8004.
+`vla/vla_grasp_v3_step13000.sh` and its `_rtc.sh` variant retain the current 60-second and 1.0 rad/s
+settings and use the existing shared runner and training start pose. Older models remain available.
+JAX checkpoint: `/data/ta2/model_exports/grasp_v3_step13000`.
+PyTorch checkpoint: `/data/ta2/model_exports/grasp_v3_step13000_pytorch`.
+Verification and offline smoke evidence: `/data/ta2/model_exports/grasp_v3_eval/step13000_deployment`.
