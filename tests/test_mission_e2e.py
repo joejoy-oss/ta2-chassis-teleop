@@ -274,11 +274,13 @@ class ApiRegression(_MissionServer, unittest.TestCase):
     def test_all_arm_poses_and_down5(self):
         client = TA2Client(self.url)
         poses = client.capabilities()["arm_poses"]
-        self.assertEqual(set(poses), {"raise", "lower", "start", "start_hold", "down5", "open_right", "close_right", "open_left", "close_left"})
+        self.assertEqual(set(poses), {"raise", "lower", "start", "start_hold", "down5", "fwd5_left", "fwd5_right",
+                                      "open_right", "close_right", "open_left", "close_left"})
         for pose in poses:
             record = client.arm_pose(pose, wait=True, poll=.03)
             self.assertEqual(record["status"], "succeeded", record)
         self.assertEqual(self.commands("down"), [["right", "5"]])
+        self.assertEqual(self.commands("move"), [["left", "5", "0", "0"], ["right", "5", "0", "0"]])
 
     def test_route_only_accepts_estop(self):
         client = TA2Client(self.url)

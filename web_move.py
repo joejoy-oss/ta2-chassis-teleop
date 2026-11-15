@@ -94,7 +94,7 @@ except (OSError, ValueError, KeyError, TypeError):
     saved_model = DEFAULT_MODEL
 if not isinstance(saved_model, str) or saved_model not in VLA_MODELS:
     saved_model = DEFAULT_MODEL
-ARM_TIME = {"raise": 8, "lower": 15, "start": 10, "start_hold": 10, "down5": 8, "open_right": 3, "close_right": 3, "open_left": 3, "close_left": 3}
+ARM_TIME = {"raise": 8, "lower": 15, "start": 10, "start_hold": 10, "down5": 8, "fwd5_left": 8, "fwd5_right": 8, "open_right": 3, "close_right": 3, "open_left": 3, "close_left": 3}
 ARM_DOWN_CMD = shlex.split(os.environ.get("ARM_DOWN_CMD", "/root/arm_down.sh"))   # base command; callers append side and cm
 ARM_MOVE_CMD = shlex.split(os.environ.get("ARM_MOVE_CMD", "/root/arm_move.sh"))   # + side forward_cm left_cm up_cm
 # start = VLA training start pose (arm/train_start_pose.json, first frame of a training episode)
@@ -544,6 +544,8 @@ def run_arm(action, record=None, down=None, move=None):
             return
         if action == "down5":
             down = ("right", 5)
+        if action in ("fwd5_left", "fwd5_right"):        # page buttons: one click = 5 cm forward
+            move = (action[5:], 5, 0, 0)
         if move:
             cmd = ARM_MOVE_CMD + [move[0]] + [f"{v:g}" for v in move[1:]]
         else:
@@ -1145,7 +1147,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
     </div>
     <p class="status-line">上次：<span id="vlast">尚未运行</span></p>
     <div class="arm-section">
-      <div class="arm-controls"><h3>手臂</h3><button id="armstart" class="small" title="回到训练起始姿态，夹爪张开，约 10 秒" disabled>起始姿态</button><button id="armstarthold" class="small" title="回到训练起始姿态，正在夹着的夹爪保持夹紧（不松开），约 10 秒" disabled>起始姿态·保持夹爪</button><button id="armdown5" class="small" title="右臂末端竖直下降 5 cm，朝向不变，夹着的夹爪保持夹紧；每次按当前位置重新计算，最多降到末端 z = −0.40 m（不足 5 cm 时只降到下限），约 8 秒" disabled>右臂下降 5 cm</button><button id="armopenright" class="small" title="张开右夹爪（全力张开），手臂保持当前姿态不动；夹着的东西会掉下来，约 3 秒" disabled>松开右爪</button><button id="armcloseright" class="small" title="闭合右夹爪（全力夹紧），手臂保持当前姿态不动，约 3 秒；之后保持夹紧" disabled>闭合右爪</button><button id="armraise" class="small" title="抬起手臂，约 8 秒" disabled>抬起</button><button id="armlower" class="small" title="返回抬起前的姿态，约 15 秒" disabled>放下</button></div>
+      <div class="arm-controls"><h3>手臂</h3><button id="armstart" class="small" title="回到训练起始姿态，夹爪张开，约 10 秒" disabled>起始姿态</button><button id="armstarthold" class="small" title="回到训练起始姿态，正在夹着的夹爪保持夹紧（不松开），约 10 秒" disabled>起始姿态·保持夹爪</button><button id="armdown5" class="small" title="右臂末端竖直下降 5 cm，朝向不变，夹着的夹爪保持夹紧；每次按当前位置重新计算，最多降到末端 z = −0.40 m（不足 5 cm 时只降到下限），约 8 秒" disabled>右臂下降 5 cm</button><button id="armfwdleft" class="small" title="左臂末端沿直线向前 5 cm，朝向和夹爪不变；每次按当前位置重新计算，够不到或路径不安全时拒绝，约 8 秒" disabled>左臂前送 5 cm</button><button id="armfwdright" class="small" title="右臂末端沿直线向前 5 cm，朝向和夹爪不变；每次按当前位置重新计算，够不到或路径不安全时拒绝，约 8 秒" disabled>右臂前送 5 cm</button><button id="armopenright" class="small" title="张开右夹爪（全力张开），手臂保持当前姿态不动；夹着的东西会掉下来，约 3 秒" disabled>松开右爪</button><button id="armcloseright" class="small" title="闭合右夹爪（全力夹紧），手臂保持当前姿态不动，约 3 秒；之后保持夹紧" disabled>闭合右爪</button><button id="armraise" class="small" title="抬起手臂，约 8 秒" disabled>抬起</button><button id="armlower" class="small" title="返回抬起前的姿态，约 15 秒" disabled>放下</button></div>
       <p id="armst" class="status-line">尚未移动</p>
     </div>
   </div></section>
@@ -1212,7 +1214,7 @@ const doEstop=()=>{if(estopBtn.disabled)return;end();post('/estop')};estopBtn.on
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();doEstop()}});
 const modeEl=document.getElementById('mode'),connectionEl=document.getElementById('connection'),connectionText=document.getElementById('connection-text');
 const directions={forward:'前进',back:'后退',left:'向左',right:'向右',ccw:'逆时针',cw:'顺时针'};
-const armActions={start:'起始姿态',start_hold:'起始姿态（保持夹爪）',down5:'右臂下降 5 cm',open_right:'松开右爪',close_right:'闭合右爪',open_left:'松开左爪',close_left:'闭合左爪',raise:'抬起',lower:'放下'};
+const armActions={start:'起始姿态',start_hold:'起始姿态（保持夹爪）',down5:'右臂下降 5 cm',fwd5_left:'左臂前送 5 cm',fwd5_right:'右臂前送 5 cm',open_right:'松开右爪',close_right:'闭合右爪',open_left:'松开左爪',close_left:'闭合左爪',raise:'抬起',lower:'放下'};
 function uiText(value){
   let t=String(value??'');
   const phrases=[['route running: only E-STOP is accepted','路线执行中，仅接受急停'],
@@ -1231,7 +1233,7 @@ function uiText(value){
     ['trail is empty','轨迹为空'],['starting','正在启动'],['ready','就绪'],['stopped','已停止'],
     ['released','已松开'],['release','松开'],['timeout','超时'],['busy','忙碌中'],['done','已完成'],['error','错误']];
   for(const [from,to] of phrases)t=t.split(from).join(to);
-  t=t.replace(/\barms (start_hold|start|down5|open_right|close_right|open_left|close_left|raise|lower):/g,(_,a)=>'手臂'+armActions[a]+'：')
+  t=t.replace(/\barms (start_hold|start|down5|fwd5_left|fwd5_right|open_right|close_right|open_left|close_left|raise|lower):/g,(_,a)=>'手臂'+armActions[a]+'：')
     .replace(/\b(step|hold) (forward|back|left|right|ccw|cw)\b/g,(_,k,d)=>(k==='step'?'点按':'持续')+directions[d])
     .replace(/\bpath /g,'路径 ').replace(/\bsteps\b/g,'步').replace(/\bNone\b/g,'无');
   return t;
@@ -1283,6 +1285,8 @@ armStart.onclick=async()=>{const r=await post('/arm/start');if(r.error)st.textCo
 const armCloseRight=document.getElementById('armcloseright');armCloseRight.onclick=async()=>{const r=await post('/arm/close_right');if(r.error)st.textContent=r.error};
 const armOpenRight=document.getElementById('armopenright');armOpenRight.onclick=async()=>{const r=await post('/arm/open_right');if(r.error)st.textContent=r.error};
 const armDown5=document.getElementById('armdown5');armDown5.onclick=async()=>{const r=await post('/arm/down5');if(r.error)st.textContent=r.error};
+const armFwdLeft=document.getElementById('armfwdleft');armFwdLeft.onclick=async()=>{const r=await post('/arm/fwd5_left');if(r.error)st.textContent=r.error};
+const armFwdRight=document.getElementById('armfwdright');armFwdRight.onclick=async()=>{const r=await post('/arm/fwd5_right');if(r.error)st.textContent=r.error};
 const armStartHold=document.getElementById('armstarthold');armStartHold.onclick=async()=>{const r=await post('/arm/start_hold');if(r.error)st.textContent=r.error};
 const vlaBtn=document.getElementById('vlarun'),vlaSt=document.getElementById('vlast');
 const routeBtns=[...document.querySelectorAll('button[data-route]')],routeSt=document.getElementById('routest');
@@ -1423,7 +1427,7 @@ async function poll(){try{
   if(s.vla){if(vlaStarted===null)vlaStarted=performance.now()}else vlaStarted=null;
   vlaProgress.hidden=!s.vla;updateVlaProgress();
   updateRoute(s);
-  armRaise.disabled=!still;armLower.disabled=!still;armStart.disabled=!still;armStartHold.disabled=!still;armDown5.disabled=!still;armOpenRight.disabled=!still;armCloseRight.disabled=!still;vlaBtn.disabled=!still||!!s.estop||!s.connected;
+  armRaise.disabled=!still;armLower.disabled=!still;armStart.disabled=!still;armStartHold.disabled=!still;armDown5.disabled=!still;armFwdLeft.disabled=!still;armFwdRight.disabled=!still;armOpenRight.disabled=!still;armCloseRight.disabled=!still;vlaBtn.disabled=!still||!!s.estop||!s.connected;
   if(s.mission&&s.mission.active)t="全流程运行中，仅接受急停";
   st.textContent=t;st.title=t;
   const busyStep=s.moving&&(s.moving.startsWith('step')||s.moving.startsWith('path'))||s.seq.length>0||!!s.arm;

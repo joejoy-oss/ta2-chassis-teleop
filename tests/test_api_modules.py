@@ -46,6 +46,11 @@ class ModuleAPI(_ModuleServer, unittest.TestCase):
             self.error("BAD_REQUEST", 400, self.client.arm_move, "left", **kw)
         self.error("BAD_REQUEST", 400, self.client.arm_move, "both", forward_cm=5)
         self.assertIn("arm.move", self.client.capabilities()["actions"])
+        for side in ("left", "right"):                       # page buttons: one click = 5 cm forward
+            self.idle()
+            self.assertEqual(self.request("POST", f"/arm/fwd5_{side}")[0], 200)
+            self.wait_for(lambda: len(self.commands("move")) == 3 + (side == "right"))
+        self.assertEqual(self.commands("move")[2:], [["left", "5", "0", "0"], ["right", "5", "0", "0"]])
 
     def test_arm_down_both_sides_and_validation(self):
         for side, cm in (("left", .5), ("right", 15)):
