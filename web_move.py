@@ -326,7 +326,7 @@ class GripperMonitor:
                          "fresh": bool(monitor.p.poll() is None and age < mission_module.MONITOR_TIMEOUT
                                        and sample.get("fresh") is True
                                        and all(mission_module.finite(sample.get(k)) for k in ("grip_pos", "grip_eff", "ee_z"))),
-                         "holding": mission_module.holding(sample)}
+                         "holding": mission_module.holding(sample, side)}
         return out
 
     def close(self):
@@ -340,25 +340,31 @@ class GraspDetection:
         self.detectors = {}
         self.hand = None
         self.fault = None
+        self.no_grasp = None          # empty grasp / held without lifting: end the run early, grasped false
         self.done = threading.Event()
 
     def observe(self, frame):
-        if self.hand or self.fault:
+        if self.hand or self.fault or self.no_grasp:
             return
         if not self.monitor.fresh():
             self.fault = "arm feedback lost"
             return
         for side in mission_module.SIDES:
-            self.detectors[side] = mission_module.grasp_update(self.detectors.get(side), frame[side], frame["t"])
+            self.detectors[side] = mission_module.grasp_update(self.detectors.get(side), frame[side], frame["t"], side)
             if self.detectors[side]["success"] and self.hand is None:
                 self.hand = side
+            elif self.hand is None and self.no_grasp is None:
+                if self.detectors[side]["empty"]:
+                    self.no_grasp = f"{side} gripper closed on nothing"
+                elif self.detectors[side]["no_lift"]:
+                    self.no_grasp = f"{side} gripper holding but not lifted within {mission_module.NO_LIFT_S:g} s"
 
     def watch(self, record):
         while not self.done.wait(.02):
             with gripper_monitor.lock:
                 if not self.hand and not self.monitor.fresh():
                     self.fault = "arm feedback lost"
-                should_stop = self.hand is not None or self.fault is not None
+                should_stop = self.hand is not None or self.fault is not None or self.no_grasp is not None
             if record["status"] != "running":
                 return  # external STOP/E-STOP owns cancellation
             if should_stop:
@@ -722,6 +728,10 @@ def run_vla(tag, model_id, record=None, monitor=None):
                 detail.update(status="succeeded", error=None)
                 state["vla_last"] = f"{label} / {tag}: grasped ({detection.hand})"
                 ok = True
+            elif detection and detection.no_grasp:
+                detail.update(status="no_grasp", error=detection.no_grasp)
+                state["vla_last"] = f"{label} / {tag}: no grasp ({detection.no_grasp})"
+                ok, code = False, "NO_GRASP"
             elif detection and (detection.fault or (monitor and not monitor.fresh())):
                 detail.update(status="feedback_lost", error=detection.fault or "arm feedback lost")
                 ok, code = False, "FEEDBACK_LOST"

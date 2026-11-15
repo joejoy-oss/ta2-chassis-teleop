@@ -21,7 +21,14 @@ PORT = int(os.environ.get("MISSION_PORT", os.environ.get("POLICY_PORT", "8000"))
 RTC = os.environ.get("MISSION_RTC", "0") == "1"   # async Real-Time Chunking for the grasp attempts (vla_run.sh RTC=1)
 ARRIVE_PAUSE = float(os.environ.get("ARRIVE_PAUSE", "10"))
 PLACE_CM = float(os.environ.get("PLACE_CM", "10"))
-HOLD_POS_MIN = float(os.environ.get("HOLD_POS_MIN", "0.06"))  # calibrated: empty-closed is -0.047 (R) / -0.059 (L) rad
+# "Holding something" = gripper pushing closed (effort) but stopped clearly above its empty-closed position.
+# Empty-closed is very repeatable (right: -0.0485 +/- 0.0004 rad over 5 trials, 2026-11-15 17:17; left: -0.059,
+# one earlier reading -- recalibrate with the page's 夹爪标定记录). Solid and thin objects both count as held.
+EMPTY_CLOSED = {"right": float(os.environ.get("HOLD_EMPTY_RIGHT", "-0.0485")),
+                "left": float(os.environ.get("HOLD_EMPTY_LEFT", "-0.059"))}
+HOLD_MARGIN = float(os.environ.get("HOLD_MARGIN", "0.01"))     # rad above empty-closed (25x its noise)
+EMPTY_PERSIST = float(os.environ.get("EMPTY_PERSIST", "1.0"))   # s closed on nothing -> attempt failed at once
+NO_LIFT_S = float(os.environ.get("NO_LIFT_S", "10"))            # s holding without the lift -> attempt failed
 HOLD_POS_MAX = float(os.environ.get("HOLD_POS_MAX", "0.75"))
 HOLD_EFF_MAX = float(os.environ.get("HOLD_EFF_MAX", "-1.0"))
 LIFT_MIN = float(os.environ.get("LIFT_MIN", "0.04"))
@@ -55,41 +62,72 @@ def finite(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
-def holding(sample):
-    """Pure position/effort predicate. Caller must also check feedback freshness."""
+def hold_threshold(side=None):
+    """Lowest gripper position that counts as holding; without a side, the stricter of the two."""
+    base = EMPTY_CLOSED[side] if side in EMPTY_CLOSED else max(EMPTY_CLOSED.values())
+    return base + HOLD_MARGIN
+
+
+def holding(sample, side=None):
+    """Something (solid or thin) is between the fingers: the gripper pushes closed (effort) but stopped clearly
+    above its empty-closed position. Pure predicate; the caller must also check feedback freshness."""
     pos, eff = sample.get("grip_pos"), sample.get("grip_eff")
-    return (finite(pos) and finite(eff) and HOLD_POS_MIN <= pos <= HOLD_POS_MAX and eff <= HOLD_EFF_MAX)
+    return (finite(pos) and finite(eff) and hold_threshold(side) <= pos <= HOLD_POS_MAX and eff <= HOLD_EFF_MAX)
 
 
-def grasp_update(previous, sample, t):
-    """Pure state transition: close height + uninterrupted loaded, lifted hold.
+def closed_empty(sample, side=None):
+    """The gripper pushes closed and reached its empty-closed position: nothing between the fingers."""
+    pos, eff = sample.get("grip_pos"), sample.get("grip_eff")
+    return finite(pos) and finite(eff) and eff <= HOLD_EFF_MAX and pos < hold_threshold(side)
 
-    A fresh detector is used for each attempt. The first close height remains
-    fixed; opening/invalid/stale/gapped samples break the persistence interval.
+
+def grasp_update(previous, sample, t, side=None):
+    """Pure state transition for one hand during one attempt.
+
+    success: holding something (solid or thin) AND lifted >= LIFT_MIN above the first close height, for
+             HOLD_PERSIST seconds without a break.
+    empty:   closed on nothing for EMPTY_PERSIST seconds -> the attempt can be ended at once.
+    no_lift: holding for NO_LIFT_S seconds without reaching success -> the attempt can be ended.
+    A fresh detector is used for each attempt. The first close height remains fixed; opening/invalid/
+    stale/gapped samples break every persistence interval.
     """
-    out = dict(previous or {"z_at_close": None, "since": None, "last_t": None})
-    out["success"] = False
+    out = dict(previous or {"z_at_close": None, "since": None, "last_t": None, "empty_since": None, "hold_since": None})
+    out.update(success=False, empty=False, no_lift=False)
     if not finite(t) or (out["last_t"] is not None and t <= out["last_t"]):
-        out["since"] = None
+        out.update(since=None, empty_since=None, hold_since=None)
         return out
     gap = out["last_t"] is not None and t - out["last_t"] > MONITOR_TIMEOUT
     out["last_t"] = t
     pos, z = sample.get("grip_pos"), sample.get("ee_z")
     if sample.get("fresh") is not True or not finite(pos) or not finite(z):
-        out["since"] = None
+        out.update(since=None, empty_since=None, hold_since=None)
         return out
+    if gap:
+        out.update(since=None, empty_since=None, hold_since=None)
+    if closed_empty(sample, side):
+        out["empty_since"] = out["empty_since"] if out["empty_since"] is not None else t
+        out["empty"] = t - out["empty_since"] >= EMPTY_PERSIST
+    else:
+        out["empty_since"] = None
     if pos > HOLD_POS_MAX:
-        out["since"] = None
+        out.update(since=None, hold_since=None)
         return out
     if out["z_at_close"] is None:
         out["z_at_close"] = z
-    good = holding(sample) and z >= out["z_at_close"] + LIFT_MIN
+    held = holding(sample, side)
+    if held:
+        out["hold_since"] = out["hold_since"] if out["hold_since"] is not None else t
+    else:
+        out["hold_since"] = None
+    good = held and z >= out["z_at_close"] + LIFT_MIN
     if not good or gap:
         out["since"] = None
     if good:
         if out["since"] is None:
             out["since"] = t
         out["success"] = t - out["since"] >= HOLD_PERSIST
+    if out["hold_since"] is not None and not out["success"] and t - out["hold_since"] >= NO_LIFT_S:
+        out["no_lift"] = True
     return out
 
 
@@ -198,6 +236,7 @@ class Mission:
         self.carrying = False
         self.detectors = {}
         self.success_hand = None
+        self.attempt_fail = None
         self.command = None
         self.logfile = None
         self.active_step = None
@@ -232,12 +271,23 @@ class Mission:
         if self.active and self.watching and not valid:
             self.fault = "arm feedback lost"
         if self.detecting:
+            if self.logfile:      # gripper telemetry for every attempt (~10 Hz) to re-tune the detector later
+                try:
+                    self._event("grip", ft=frame["t"], **{s[0]: [frame[s].get(k) for k in ("grip_pos", "grip_eff", "ee_z")]
+                                                          for s in SIDES})
+                except (OSError, ValueError):
+                    pass
             for side in SIDES:
-                self.detectors[side] = grasp_update(self.detectors.get(side), frame[side], frame["t"])
+                self.detectors[side] = grasp_update(self.detectors.get(side), frame[side], frame["t"], side)
                 if self.detectors[side]["success"] and self.success_hand is None:
                     self.success_hand = side
+                elif self.attempt_fail is None and self.success_hand is None:
+                    if self.detectors[side]["empty"]:
+                        self.attempt_fail = f"{side} gripper closed on nothing"
+                    elif self.detectors[side]["no_lift"]:
+                        self.attempt_fail = f"{side} gripper holding but not lifted within {NO_LIFT_S:g} s"
         if self.carrying:
-            if holding(frame[self.state["hand"]]):
+            if holding(frame[self.state["hand"]], self.state["hand"]):
                 self.drop_since = None
             elif self.drop_since is None:
                 self.drop_since = frame["t"]
@@ -283,7 +333,7 @@ class Mission:
                 raise MissionFailure("missing paths: " + ", ".join(missing))
             self.detecting = self.carrying = False
             self._new_monitor()
-            if any(holding(self.monitor.frame[s]) for s in SIDES):
+            if any(holding(self.monitor.frame[s], s) for s in SIDES):
                 raise MissionFailure("a gripper is already holding an object")
             self._check()
             self.preflight_seconds = time.monotonic() - began
@@ -428,6 +478,10 @@ class Mission:
                     self.detecting = False
                     self._stop_command("vla")
                     return self.command.returncode, hand
+                if attempt and self.attempt_fail:          # empty grasp / no lift: do not wait for the time limit
+                    self.detecting = False
+                    self._stop_command("vla")
+                    return self.command.returncode, None
                 if self.carrying and self.dropped:
                     raise MissionFailure("object dropped")
                 if time.monotonic() >= deadline:
@@ -455,7 +509,7 @@ class Mission:
             self.state["attempt"] = i
             self.detecting = False
             self._new_monitor()
-            self.detectors, self.success_hand = {}, None
+            self.detectors, self.success_hand, self.attempt_fail = {}, None, None
             self.detecting = True
             tag = f"{prefix}_{i}"
             entry = {"attempt": i, "tag": tag, "result": "running", "hand": None}
@@ -466,7 +520,8 @@ class Mission:
                                          kind="vla", attempt=True,
                                          env={**os.environ, "PROMPT": cfg["prompt"], "PORT": str(cfg["port"]), "RESET": "1",
                                               "RTC": "1" if cfg.get("rtc") else "0"})
-                entry.update(result="succeeded" if hand else "failed", hand=hand, returncode=rc)
+                entry.update(result="succeeded" if hand else "failed", hand=hand, returncode=rc,
+                             reason=None if hand else (self.attempt_fail or "time limit without a grasp"))
             except Exception:
                 entry.update(result="aborted" if self.cancel.is_set() else "failed")
                 raise
@@ -530,7 +585,7 @@ class Mission:
             self._voice_sub(2, "running")
             self._arm("start_hold")
             self._check()
-            if not holding(self.monitor.frame[hand]):
+            if not holding(self.monitor.frame[hand], hand):
                 raise MissionFailure("7.3 object dropped after stow")
             self.drop_since, self.dropped, self.carrying = None, False, True
             self._voice_sub(2, "succeeded")
@@ -541,7 +596,7 @@ class Mission:
             if rc != 0:
                 raise MissionFailure(f"7.4 arm_down exited {rc}")
             self._check()
-            if self.dropped or not holding(self.monitor.frame[hand]):
+            if self.dropped or not holding(self.monitor.frame[hand], hand):
                 raise MissionFailure("7.4 object dropped before release")
             self._voice_sub(3, "succeeded")
             # 7.5 release (only the grasping hand)
@@ -558,7 +613,7 @@ class Mission:
             while True:
                 self._check()
                 f = self.monitor.frame[hand]
-                if finite(f.get("grip_pos")) and f["grip_pos"] >= OPEN_MIN and not holding(f):
+                if finite(f.get("grip_pos")) and f["grip_pos"] >= OPEN_MIN and not holding(f, hand):
                     break
                 if time.monotonic() >= deadline:
                     raise MissionFailure(f"7.6 gripper not confirmed open/empty (pos {f.get('grip_pos')})")
@@ -617,7 +672,7 @@ class Mission:
         self._step("stow")
         self._arm("start_hold")
         self._check()
-        if not holding(self.monitor.frame[self.state["hand"]]):
+        if not holding(self.monitor.frame[self.state["hand"]], self.state["hand"]):
             raise MissionFailure("object dropped after stow")
         self.drop_since = None
         self.carrying = True
@@ -629,7 +684,7 @@ class Mission:
         if rc != 0:
             raise MissionFailure(f"arm_down exited {rc}")
         self._check()
-        if self.dropped or not holding(self.monitor.frame[self.state["hand"]]):
+        if self.dropped or not holding(self.monitor.frame[self.state["hand"]], self.state["hand"]):
             raise MissionFailure("object dropped before release")
         self.carrying = False  # opening is intentional from this point on
         self._arm("open_" + self.state["hand"])

@@ -198,6 +198,22 @@ class StalePreflight(_MissionServer, unittest.TestCase):
         self.assertEqual(self.commands("vla"), [])
         self.assertFalse(list((self.dir / "missions").glob("*.jsonl")))
 
+class EmptyGraspFailsFast(_MissionServer, unittest.TestCase):
+    scenario = "empty_fast"
+
+    def test_empty_attempts_end_after_about_a_second(self):
+        aid = self.start(attempts=2)
+        m, records = self.finish(aid, "failed")
+        self.assertIn("all grasp attempts failed", m["result"])
+        self.assertEqual([r["reason"] for r in m["attempt_results"]], ["left gripper closed on nothing"] * 2)
+        self.assertEqual(len(self.commands("vla_interrupted")), 2)            # stopped, not run to ATTEMPT_S
+        ends = {r["tag"]: r["t"] for r in records if r["event"] == "attempt_end"}
+        starts = {r["tag"]: r["t"] for r in records if r["event"] == "attempt_start"}
+        for tag in ends:
+            self.assertLess(ends[tag] - starts[tag], 3.5)                     # ATTEMPT_S is 4 s in these tests
+        self.assertTrue(any(r["event"] == "grip" for r in records))           # telemetry is logged
+
+
 class RightSuccess(_MissionServer, unittest.TestCase):
     scenario = "success_right"
 

@@ -62,10 +62,12 @@ def main():
             if loaded and now - st.get("began", now) > 0.10:
                 frame[side].update(grip_pos=0.39, grip_eff=-2.5,
                                    ee_z=-0.30 if now - st["began"] < 0.30 else -0.23)
+            if SCENARIO == "empty_fast" and st["stage"] == "vla" and now - st.get("began", now) > 0.10:
+                frame["left"].update(grip_pos=-0.06, grip_eff=-1.71)        # closed on nothing
             if SCENARIO == "occupied":
                 frame["right"].update(grip_pos=0.4, grip_eff=-2.0)
             if (ROOT / "drop").exists():
-                frame[side].update(grip_pos=0.02, grip_eff=-2.0)
+                frame[side].update(grip_pos=-0.06, grip_eff=-1.71)
             print(json.dumps(frame), flush=True)
             time.sleep(0.05)
     else:
@@ -86,6 +88,13 @@ def main():
                 return
             event("vla_env", [os.environ["PROMPT"], os.environ["PORT"], os.environ["RESET"]])
             success_at = 3 if SCENARIO == "success_left" else 1
+            if SCENARIO == "empty_fast":            # runs to its time limit unless the mission stops it
+                def stopped(*_):
+                    event("vla_interrupted", [])
+                    sys.exit(130)
+                signal.signal(signal.SIGINT, stopped)
+                time.sleep(float(args[1]))
+                return
             if SCENARIO == "all_fail" or st["attempt"] < success_at:
                 time.sleep(0.15)
                 sys.exit(7 if st["attempt"] == 1 else 0)
