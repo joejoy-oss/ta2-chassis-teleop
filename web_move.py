@@ -30,7 +30,7 @@ Arms: "Raise arms" / "Lower arms" / "Start pose" run arm/arm_pose.py (standalone
 as a separate process; its output goes to the log. Arms and chassis never move at the same time.
 STOP also interrupts the arm script, which then holds where it is and pauses the FSM.
 VLA grasp: "VLA grasp 60 s" runs /root/vla_run.sh (Start pose, then the step-4999 policy for 60 s at
-max 0.5 rad/s, prompt 抓取沙包). Needs the policy container running. STOP or E-STOP interrupts it.
+max 1.0 rad/s, prompt 抓取沙包). Needs the policy container running. STOP or E-STOP interrupts it.
 E-STOP (red header button, or the Esc key): stops the chassis and any path, interrupts every arm or
 VLA script in the container (arm_pose.py, guarded_grasp.py; force-killed after 3 s), then publishes
 /api/fsm/enable 0.0 for 2 s so the robot PAUSEs (zero-velocity hold). It is a software stop: keep
@@ -78,7 +78,7 @@ DEXEC = shlex.split(os.environ.get("ESTOP_DEXEC", f"docker exec {CONTAINER}"))  
 FSM_PAUSE = ["/usr/local/bin/openpi-client-entrypoint.sh", "timeout", "8", "ros2", "topic", "pub",
              "-r", "20", "-t", "40", "/api/fsm/enable", "std_msgs/msg/Float32", "{data: 0.0}"]
 VLA_CMD = shlex.split(os.environ.get("VLA_CMD", "/root/vla_run.sh"))
-VLA_SECONDS, VLA_SPEED = "60", "0.5"
+VLA_SECONDS, VLA_SPEED = "60", "1.0"
 POLICY_CONTAINER = os.environ.get("POLICY_CONTAINER", "")
 with open(os.path.join(os.path.dirname(__file__), "vla_models.json")) as model_file:
     MODEL_CONFIG = json.load(model_file)

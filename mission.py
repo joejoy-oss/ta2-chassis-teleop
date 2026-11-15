@@ -432,7 +432,7 @@ class Mission:
                 self.state["attempt_results"].append(entry)
                 self._event("attempt_start", **entry)
                 try:
-                    rc, hand = self._execute(self.h.VLA_CMD + [tag, str(ATTEMPT_S), "0.5"],
+                    rc, hand = self._execute(self.h.VLA_CMD + [tag, str(ATTEMPT_S), "1.0"],
                                              kind="vla", attempt=True,
                                              env={**os.environ, "PROMPT": cfg["prompt"], "PORT": str(cfg["port"]), "RESET": "1"})
                     entry.update(result="succeeded" if hand else "failed", hand=hand, returncode=rc)

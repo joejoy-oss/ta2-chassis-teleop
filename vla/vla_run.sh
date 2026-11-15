@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: [PROMPT=..] [RESET=0] [PORT=8001] vla_run.sh <tag> [seconds=120] [max_speed=0.5]
+# Usage: [PROMPT=..] [RESET=0] [PORT=8001] vla_run.sh <tag> [seconds=120] [max_speed=1.0]
 #   Reset arms to the training start pose (grippers open), then run the VLA policy on the robot.
 #   PROMPT  instruction sent to the policy (default 抓取沙包)
 #   RESET=0 skip the start-pose reset (keeps whatever the grippers hold; used by vla_place.sh)
@@ -8,7 +8,7 @@
 # Stops the camera web viewer (ta2_vision_server.py) first if it holds the robot video port 8890.
 # Exit code: 0 = ran to the time limit, non-zero = aborted or failed (see /root/openpi-xpu/client/outputs/<tag>/report.json).
 set -o pipefail
-TAG=${1:?tag}; SEC=${2:-120}; SPD=${3:-0.5}
+TAG=${1:?tag}; SEC=${2:-120}; SPD=${3:-1.0}
 PROMPT=${PROMPT:-抓取沙包}; RESET=${RESET:-1}; PORT=${PORT:-8000}
 RTCFLAG=; [ "${RTC:-0}" = 1 ] && RTCFLAG=--rtc
 # The robot pushes one RTP video stream to UDP 8890 and only one program can receive it. The camera web

@@ -75,7 +75,7 @@ def guarded_action(target, measured, previous, *, period, speed, max_tracking, m
     measured = np.asarray(measured, dtype=np.float64)
     if target.shape != (19,) or measured.shape != (14,) or not np.isfinite(target).all() or not np.isfinite(measured).all():
         raise GuardError("Invalid action or measured joint shape/value")
-    if not (0 < speed <= 0.5 and 0 < period <= 1 and 0 < max_tracking <= 0.20 and 0 < max_initial <= 0.60):
+    if not (0 < speed <= 1.0 and 0 < period <= 1 and 0 < max_tracking <= 0.20 and 0 < max_initial <= 0.60):
         raise GuardError("Invalid guard limits")
     desired = target[JOINTS]
     initial_gap = float(np.max(np.abs(desired - measured)))
@@ -432,7 +432,7 @@ def parse_args():
     parser.add_argument("--replan-steps", type=int, default=8)
     parser.add_argument("--max-seconds", type=float, default=15.0)
     parser.add_argument("--max-actions", type=int, default=675)
-    parser.add_argument("--max-speed", type=float, default=0.5)
+    parser.add_argument("--max-speed", type=float, default=1.0)
     parser.add_argument("--max-tracking", type=float, default=0.20)
     parser.add_argument("--max-initial-gap", type=float, default=0.60)
     parser.add_argument("--max-age", type=float, default=1.0)
@@ -441,7 +441,7 @@ def parse_args():
     parser.add_argument("--rtc-delay", type=int, default=None, help="RTC: pin the inference delay in steps (default: measured)")
     parser.add_argument("--rtc-horizon", type=int, default=None, help="RTC: pin the execution horizon in steps (default: 2x delay)")
     args = parser.parse_args()
-    limits = ((args.frequency, 45), (args.max_seconds, 120), (args.max_speed, 0.5),
+    limits = ((args.frequency, 45), (args.max_seconds, 120), (args.max_speed, 1.0),
               (args.max_tracking, 0.20), (args.max_initial_gap, 0.60), (args.max_age, 1))
     if any(not math.isfinite(value) or not 0 < value <= cap for value, cap in limits):
         parser.error("Guard values must be positive and cannot exceed their defaults")
