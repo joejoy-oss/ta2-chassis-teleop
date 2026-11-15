@@ -25,8 +25,14 @@ PY
 A=/root/openpi-xpu/client/outputs/arm
 SIM=ta2-sim-pipeline
 docker ps --format '{{.Names}}' | grep -qx "$SIM" || { echo "IK container $SIM is not running"; exit 2; }
-docker exec openpi-xpu-client bash -lc "source /opt/ros/humble/setup.bash; python3 /outputs/arm/read_arm_now.py $SIDE 2>/dev/null" \
-  | tail -1 > "$A/${SIDE}_now.json"
+# read_arm_now.py prints its reason on stdout and exits 1 when the arm stream is stale; say so instead of
+# exiting silently under pipefail.
+NOW=$(docker exec openpi-xpu-client bash -lc "source /opt/ros/humble/setup.bash; python3 /outputs/arm/read_arm_now.py $SIDE 2>/dev/null" \
+  | tail -1) || true
+python3 -c 'import json, sys; d = json.loads(sys.argv[1]); assert isinstance(d, dict) and "q" in d and "ee" in d' "$NOW" 2>/dev/null || {
+  echo "cannot read the current $SIDE arm state: ${NOW:-no output} (is /${SIDE}_arm/joint_states publishing?)"; exit 1;
+}
+printf '%s\n' "$NOW" > "$A/${SIDE}_now.json"
 for f in ik_offset.py "${SIDE}_fk_fit.json" "${SIDE}_now.json"; do docker cp "$A/$f" "$SIM:/tmp/$f"; done
 docker exec "$SIM" /workspace/.venv/bin/python /tmp/ik_offset.py --arm "$SIDE" \
   --fit "/tmp/${SIDE}_fk_fit.json" --now "/tmp/${SIDE}_now.json" --dx "$DX" --dy "$DY" --dz "$DZ" --out "/tmp/goto_${SIDE}_move.json"
