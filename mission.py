@@ -40,7 +40,7 @@ MONITOR_TIMEOUT = float(os.environ.get("MONITOR_TIMEOUT", "0.6"))
 SCRIPT_TIMEOUT = float(os.environ.get("SCRIPT_TIMEOUT", "90"))
 SIDES = ("left", "right")
 # Full flow v2 = steps 1-6 + step 7 "voice interaction module" (flow "voice" runs only step 7, for debugging).
-FLOWS = ("v1", "v2", "voice")
+FLOWS = ("v1", "v2", "voice", "grasp")      # grasp = step 3 alone (attempts with retry), stops holding
 VOICE_BRIDGE = os.environ.get("VOICE_BRIDGE", "http://127.0.0.1:18096")   # Mac voice service via ssh -R
 VOICE_BRIDGE_HOST = os.environ.get("VOICE_BRIDGE_HOST", "127.0.0.1:8096")
 VOICE_LISTEN_S = float(os.environ.get("VOICE_LISTEN_S", "120"))
@@ -348,7 +348,7 @@ class Mission:
                 raise MissionFailure("robot is not in API mode")
             self.h.check_policy(port=cfg["port"])
             missing = [n for n in ("001", "002", "003", "004") if n not in self.h.paths]
-            if cfg.get("flow") == "voice":
+            if cfg.get("flow") in ("voice", "grasp"):
                 missing = []        # step 7 alone does not drive the chassis
             if cfg.get("flow") in ("v2", "voice"):
                 try:
@@ -377,7 +377,7 @@ class Mission:
                       "result": None, "attempt_results": [], "durations": {},
                       "config": {k: cfg.get(k) for k in ("model", "model_name", "port", "prompt", "rtc", "flow")},
                       "flow": cfg.get("flow", "v1"),
-                      "voice": None if cfg.get("flow", "v1") == "v1" else {
+                      "voice": None if cfg.get("flow", "v1") in ("v1", "grasp") else {
                           "hand": None, "attempt_results": [],
                           "steps": [{"id": i, "name": n, "uses": u, "status": "pending", "detail": ""}
                                     for i, n, u in VOICE_STEPS]}}
@@ -675,11 +675,20 @@ class Mission:
             self._event("start", id=self.state["id"], config=cfg)
             self._step("preflight")
             flow = cfg.get("flow", "v1")
-            if flow != "voice":
+            if flow == "grasp":
+                # Step 3 alone: the same attempts/detector as the full flow; on success the arm stops where it
+                # is with the gripper still closed (no stow), like the page's single grasp.
+                self._step("grasp")
+                hand = self._grasp_attempts(cfg, f"mission_{self.state['id']}", self.state["attempt_results"])
+                if hand is None:
+                    self._arm("start")
+                    raise MissionFailure("all grasp attempts failed; arms reset")
+                self.state["hand"] = hand
+            elif flow != "voice":
                 self._steps_1_to_6(cfg)
             if flow in ("v2", "voice"):
                 self._voice(cfg)
-            status, reason = "succeeded", "placed" if flow == "v1" else "handed over"
+            status, reason = "succeeded", {"v1": "placed", "grasp": "grasped"}.get(flow, "handed over")
         except MissionAborted:
             status, reason = "aborted", "emergency stop"
         except Exception as exc:

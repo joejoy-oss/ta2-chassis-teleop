@@ -215,6 +215,37 @@ class EmptyGraspFailsFast(_MissionServer, unittest.TestCase):
         self.assertTrue(any(r["event"] == "grip" for r in records))           # telemetry is logged
 
 
+class GraspOnlyRetry(_MissionServer, unittest.TestCase):
+    scenario = "success_left"            # attempts 1-2 fail, attempt 3 grasps with the left hand
+
+    def test_grasp_flow_retries_and_stops_holding(self):
+        aid = TA2Client(self.url).run_mission(attempts=5, flow="grasp")
+        self.wait_for(lambda: not self.status()["mission"]["active"])
+        m = self.status()["mission"]
+        self.assertEqual((m["status"], m["result"], m["hand"], m["flow"]), ("succeeded", "grasped", "left", "grasp"), m)
+        self.assertEqual([r["result"] for r in m["attempt_results"]], ["failed", "failed", "succeeded"])
+        self.assertEqual(list(m["durations"]), ["preflight", "grasp"])
+        self.assertEqual(self.commands("arm"), [])          # no stow, no release: stops holding
+        self.assertEqual(self.commands("down"), [])
+        self.assertEqual(self.request("GET", "/api/v1/actions/" + aid)[1]["status"], "succeeded")
+        from urllib.request import urlopen
+        html = urlopen(self.url + "/", timeout=5).read().decode()
+        self.assertIn('id="vlaattempts"', html)
+        self.assertIn("flow:'grasp'", html)
+
+
+class GraspOnlyAllFail(_MissionServer, unittest.TestCase):
+    scenario = "empty_fast"
+
+    def test_grasp_flow_all_fail_resets_arms(self):
+        aid = TA2Client(self.url).run_mission(attempts=2, flow="grasp")
+        self.wait_for(lambda: not self.status()["mission"]["active"])
+        m = self.status()["mission"]
+        self.assertEqual(m["status"], "failed", m)
+        self.assertIn("all grasp attempts failed", m["result"])
+        self.assertEqual(self.commands("arm"), [["start"]])
+
+
 class RightSuccess(_MissionServer, unittest.TestCase):
     scenario = "success_right"
 

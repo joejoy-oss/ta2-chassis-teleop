@@ -989,7 +989,7 @@ ACTION_PARAMS = {
                   "stop_on_grasp": "optional boolean (default: false)"},
     "odom.reset": {},
     "mission.run": {"attempts": "optional integer", "prompt": "optional string", "port": "optional integer",
-                    "flow": "optional: v1 (steps 1-6, default) | v2 (adds step 7 voice interaction module) | voice (step 7 only)",
+                    "flow": "optional: v1 (steps 1-6, default) | v2 (adds step 7 voice interaction module) | voice (step 7 only) | grasp (step 3 only: retried grasp, stops holding)",
                     "rtc": "optional boolean (default: the selected model's mode)"},
 }
 
@@ -1236,6 +1236,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
     <p><button id="modelsbtn" type="button" class="small" onclick="location.href='/models'">选择 / 切换模型 →</button></p>
     <p id="vlaconfig" class="status-line">读取模型配置中…</p>
     <button id="vlarun" class="primary" title="回到起始姿态并张开夹爪，取帧后使用当前选定模型抓取" disabled>开始抓取（60 秒）</button>
+    <label class="status-line" title="选 3 或 5 次：用全流程第 3 步的抓取（每次先复位张爪；空夹 1 秒、夹着 10 秒不抬立即下一次；抓住即停，原地保持夹紧）。选 1 次：单次抓取。">失败自动重试：最多 <select id="vlaattempts"><option value="1">1 次（单次）</option><option value="3">3 次</option><option value="5">5 次</option></select></label>
     <label class="status-line" title="勾选：抓住（夹着东西并抬高 4 cm，保持 1.5 秒）立即停止；空夹 1 秒或夹着 10 秒不抬也提前结束。不勾：跑满时限或按停止，不做判定。"><input type="checkbox" id="vlastop" checked> 抓到就停（空夹 / 不抬也提前结束）</label>
     <div id="vla-progress" hidden>
       <div class="progress-row"><span id="vlaelapsed" role="status">已运行 0 / 60 s</span><button id="vlastop" class="small">停止</button></div>
@@ -1331,7 +1332,7 @@ function uiText(value){
     ['busy: wait until the robot is still','忙碌中，请等待机器人静止'],['arms are moving','手臂或抓取任务正在运行'],
     ['not in API mode or chassis disabled (or mode unknown yet)','非 API 模式、底盘未启用或模式未知'],
     ['no fresh wheel feedback from the robot','尚未收到机器人最新轮速反馈'],['busy, path not started','忙碌中，路径未启动'],
-    ['exited rc=','退出码：'],['grasped (left)','已抓住（左手），已停止'],['grasped (right)','已抓住（右手），已停止'],
+    ['exited rc=','退出码：'],['time limit without a grasp','到时限仍未抓住'],['all grasp attempts failed; arms reset','全部尝试都未抓住，手臂已复位'],['grasped (left)','已抓住（左手），已停止'],['grasped (right)','已抓住（右手），已停止'],
     ['no grasp (','未抓住，已提前结束（'],['left gripper closed on nothing','左爪空夹'],['right gripper closed on nothing','右爪空夹'],
     ['left gripper holding but not lifted within','左爪夹着但未按时抬起：'],['right gripper holding but not lifted within','右爪夹着但未按时抬起：'],['before running the policy (see log)','，策略尚未运行（详见日志）'],
     ['FSM pause failed rc=','暂停失败，退出码：'],['FSM paused','已暂停'],['E-STOP','急停'],
@@ -1464,7 +1465,7 @@ function updateMission(s){
     if(el.dataset.step==='grasp')el.textContent='抓取 '+(m.attempt||0)+'/'+(m.attempts||5);
   });
   const results={idle:'尚未运行',running:'运行中',succeeded:'成功',failed:'失败',aborted:'已急停中止'};
-  missionSt.textContent=({v1:'全流程 · ',v2:'全流程 v2 · ',voice:'仅第 7 步 · '}[m.flow]||'')+(results[m.status]||'尚未运行')+(m.hand?' · 抓取手：'+(m.hand==='left'?'左手':'右手'):'')+(m.pause_left_s>0?' · 停留 '+Math.ceil(m.pause_left_s)+' 秒':'')+(m.result?' · '+m.result:'')+(active?' · 仅接受急停':'');
+  missionSt.textContent=({v1:'全流程 · ',v2:'全流程 v2 · ',voice:'仅第 7 步 · ',grasp:'仅抓取（自动重试） · '}[m.flow]||'')+(results[m.status]||'尚未运行')+(m.hand?' · 抓取手：'+(m.hand==='left'?'左手':'右手'):'')+(m.pause_left_s>0?' · 停留 '+Math.ceil(m.pause_left_s)+' 秒':'')+(m.result?' · '+m.result:'')+(active?' · 仅接受急停':'');
   if(active)document.querySelectorAll('button').forEach(b=>{if(b.id!=='estop')b.disabled=true});
 }
 function updateRoute(s){
@@ -1479,8 +1480,19 @@ let selectedVlaId=null,vlaSeconds=60;
 const vlaStop=document.getElementById('vlastop');
 try{const saved=localStorage.getItem('ta2_vla_stop_on_grasp');if(saved!==null)vlaStop.checked=saved==='1'}catch(e){}
 vlaStop.onchange=()=>{try{localStorage.setItem('ta2_vla_stop_on_grasp',vlaStop.checked?'1':'0')}catch(e){}};
+const vlaAttempts=document.getElementById('vlaattempts');let vlaMode='single';
+try{const saved=localStorage.getItem('ta2_vla_attempts');if(saved)vlaAttempts.value=saved}catch(e){}
+function syncVlaMode(){vlaStop.disabled=vlaAttempts.value!=='1'}
+vlaAttempts.onchange=()=>{try{localStorage.setItem('ta2_vla_attempts',vlaAttempts.value)}catch(e){}syncVlaMode()};syncVlaMode();
 vlaBtn.onclick=async()=>{
   if(!selectedVlaId)return;
+  if(vlaAttempts.value!=='1'){vlaMode='retry';
+    try{const r=await fetch('/api/v1/actions',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({type:'mission.run',params:{flow:'grasp',attempts:Number(vlaAttempts.value)}})});
+      const d=await r.json();if(!r.ok)st.textContent=uiText((d.error&&d.error.message)||String(r.status));
+    }catch(e){st.textContent=uiText(String(e))}
+    return}
+  vlaMode='single';
   if(!vlaStop.checked){const r=await post('/vla/'+encodeURIComponent(selectedVlaId));if(r.error)st.textContent=uiText(r.error);return}
   try{const r=await fetch('/api/v1/actions',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({type:'vla.grasp',params:{model:selectedVlaId,stop_on_grasp:true}})});
@@ -1577,7 +1589,14 @@ async function poll(){try{
     vlaBtn.textContent='开始抓取（'+s.vla_selection.seconds+' 秒）';
     document.getElementById('modelsbtn').disabled=!still||!!s.estop;
   }
-  vlaSt.textContent=uiText(s.vla_last);
+  const gm=s.mission||{};
+  if(vlaMode==='retry'&&gm.flow==='grasp'){
+    const res={running:'进行中',succeeded:'已抓住',failed:'未抓住',aborted:'已急停中止'};
+    const last=(gm.attempt_results||[]).slice(-1)[0];
+    vlaSt.textContent='自动重试抓取：第 '+(gm.attempt||0)+'/'+(gm.attempts||0)+' 次 · '+(res[gm.status]||gm.status||'')+
+      (gm.hand?'（'+(gm.hand==='left'?'左手':'右手')+'，原地保持夹紧）':'')+
+      (last&&last.reason?' · 上一次：'+uiText(last.reason):'')+(gm.status!=='running'&&gm.result?' · '+uiText(gm.result):'');
+  }else vlaSt.textContent=uiText(s.vla_last);
   if(s.vla){if(vlaStarted===null)vlaStarted=performance.now()}else vlaStarted=null;
   vlaProgress.hidden=!s.vla;updateVlaProgress();
   updateRoute(s);
