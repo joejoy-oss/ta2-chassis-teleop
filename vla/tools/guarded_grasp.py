@@ -263,7 +263,9 @@ def execute(args, policy, destination, report, stopped):
             with mode_lock:
                 value, received = mode_state["value"], mode_state["time"]
             age = None if received is None else time.monotonic() - received
-            validate_mode(value, age, args.max_age)
+            # /api/current_mode is published at exactly 1 Hz: a 1.0 s limit aborted healthy runs whenever one
+            # message arrived a few ms late. Mode gets its own limit (one missed message); sensors keep max_age.
+            validate_mode(value, age, getattr(args, "max_mode_age", args.max_age))
             obs = environment.get_observation()
             validate_observation(obs)
             # The deployed extractor takes the first seven joints. Check their
@@ -435,14 +437,16 @@ def parse_args():
     parser.add_argument("--max-speed", type=float, default=1.0)
     parser.add_argument("--max-tracking", type=float, default=0.20)
     parser.add_argument("--max-initial-gap", type=float, default=0.60)
-    parser.add_argument("--max-age", type=float, default=1.0)
+    parser.add_argument("--max-age", type=float, default=1.0, help="joint state / camera freshness limit (s)")
+    parser.add_argument("--max-mode-age", type=float, default=2.5,
+                        help="/api/current_mode freshness limit (s); the topic is 1 Hz, so 2.5 tolerates one missed message")
     parser.add_argument("--rtc", action="store_true",
                         help="async Real-Time Chunking (official RTCActionBroker): infer in the background while executing")
     parser.add_argument("--rtc-delay", type=int, default=None, help="RTC: pin the inference delay in steps (default: measured)")
     parser.add_argument("--rtc-horizon", type=int, default=None, help="RTC: pin the execution horizon in steps (default: 2x delay)")
     args = parser.parse_args()
     limits = ((args.frequency, 45), (args.max_seconds, 120), (args.max_speed, 1.0),
-              (args.max_tracking, 0.20), (args.max_initial_gap, 0.60), (args.max_age, 1))
+              (args.max_tracking, 0.20), (args.max_initial_gap, 0.60), (args.max_age, 1), (args.max_mode_age, 3.0))
     if any(not math.isfinite(value) or not 0 < value <= cap for value, cap in limits):
         parser.error("Guard values must be positive and cannot exceed their defaults")
     if not 1 <= args.max_actions <= 5400 or not 6 <= args.replan_steps <= 10 or args.frequency < 1:

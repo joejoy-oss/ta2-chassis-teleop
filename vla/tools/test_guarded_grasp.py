@@ -67,6 +67,8 @@ class GuardTests(unittest.TestCase):
         for key in ["meta_mode", "left_arm_control_mode", "right_arm_control_mode", "enable_left_arm"]:
             with self.assertRaises(runner.GuardError): runner.validate_mode({**mode, key: 0}, 0.1, 1)
         with self.assertRaises(runner.GuardError): runner.validate_mode(mode, 1.1, 1)
+        runner.validate_mode(mode, 1.6, 2.5)          # 1 Hz mode topic: one late/missed message is tolerated
+        with self.assertRaises(runner.GuardError): runner.validate_mode(mode, 2.6, 2.5)
         with self.assertRaises(runner.GuardError): runner.validate_mode(mode, -1, 1)
 
 
