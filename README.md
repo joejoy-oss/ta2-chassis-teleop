@@ -48,7 +48,10 @@ Single column, Chinese labels, works on a phone. From top to bottom:
 - **Top bar** (always visible): connection, API mode, current activity, and the only red button,
   **急停 (E-STOP)**; the **Esc** key does the same. See Safety below.
 - **VLA 抓取**: the big button 开始抓取（60 秒） runs the currently selected model in `vla_models.json`
-  for 60 s at max 0.25 rad/s (Start pose with grippers open first). **选择 / 切换模型** opens `/models`,
+  at max 0.5 rad/s (Start pose with grippers open first) under `vla_takeover.py`: once a gripper settles
+  on the object (`0.06..0.75 rad`, effort `<= -1.0 N·m`, `0.6 s`), it immediately stops VLA before tabletop
+  dragging, lifts vertically `8 cm` via `arm_up.sh`, verifies the hold in mid-air, and returns to
+  `start_hold`. **选择 / 切换模型** opens `/models`,
   listing deployed models (`grasp_v3_step5000` on port 8002 with prompt 抓取红色沙包, and morning
   `sandbag_v2_step4999` on port 8000 with prompt 抓取沙包) and their container states. Selection is saved
   in `/root/ta2_vla_selected.json` without starting motion and is also used as the default model for

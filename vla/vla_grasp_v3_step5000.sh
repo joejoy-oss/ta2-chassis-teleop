@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Current web grasp model: v3 checkpoint 5000, prompt 抓取红色沙包, policy port 8002.
 # Run only when ready for robot motion: resets both arms and opens the grippers first.
-# Usage: vla_grasp_v3_step5000.sh <unique_tag> [seconds=60] [max_speed=0.25]
+# Usage: vla_grasp_v3_step5000.sh <unique_tag> [seconds=60] [max_speed=0.5]
 set -euo pipefail
-TAG=${1:?provide a unique run tag}; SEC=${2:-60}; SPD=${3:-0.25}
+TAG=${1:?provide a unique run tag}; SEC=${2:-60}; SPD=${3:-0.5}
 [[ "$TAG" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "Invalid run tag" >&2; exit 2; }
 python3 - "$SEC" "$SPD" <<'CHECK'
 import math, re, sys

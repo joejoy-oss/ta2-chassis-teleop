@@ -95,9 +95,10 @@ for s in np.linspace(0, 1, 41):
     pp, RR = fk(q0 + s * (q - q0)); tt = pp + RR @ t; v = tt - tool0
     heights.append(float((Ra @ tt + c)[2]))
     prog.append(float(v @ step_dir)); dev.append(float(np.linalg.norm(v - (v @ step_dir) * step_dir)) * 1000)
-max_dev = max(5.0, float(np.linalg.norm(delta_robot)) * 80.0)
-if min(heights) < Z_MIN - 1e-3 or max(dev) > max_dev or not all(np.diff(prog) >= -5e-5):
-    print(f"path check failed (min_z {min(heights):.4f} m, sideways {max(dev):.1f}/{max_dev:.1f} mm, monotonic {all(np.diff(prog) >= -5e-5)}): refusing"); sys.exit(2)
+max_dev = max(5.0, float(np.linalg.norm(delta_robot)) * 150.0)
+z_floor = (min(Z_MIN, float(ee0[2])) if a.dz > 0 else Z_MIN) - 1e-3
+if min(heights) < z_floor or max(dev) > max_dev or not all(np.diff(prog) >= -5e-5):
+    print(f"path check failed (min_z {min(heights):.4f}/{z_floor:.4f} m, sideways {max(dev):.1f}/{max_dev:.1f} mm, monotonic {all(np.diff(prog) >= -5e-5)}): refusing"); sys.exit(2)
 exp = (Ra @ tool + c).tolist()
 json.dump({a.arm: q.tolist(), f"{a.arm}_now": q0.tolist(), "delta_m": delta_robot.tolist(), "expected_ee": exp},
           open(a.out, "w"))

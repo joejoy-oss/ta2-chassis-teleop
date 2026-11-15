@@ -95,6 +95,7 @@ if not isinstance(saved_model, str) or saved_model not in VLA_MODELS:
     saved_model = DEFAULT_MODEL
 ARM_TIME = {"raise": 8, "lower": 15, "start": 10, "start_hold": 10, "down5": 8, "open_right": 3, "close_right": 3, "open_left": 3, "close_left": 3}
 ARM_DOWN_CMD = shlex.split(os.environ.get("ARM_DOWN_CMD", "/root/arm_down.sh"))   # base command; callers append side and cm
+ARM_UP_CMD = shlex.split(os.environ.get("ARM_UP_CMD", "/root/arm_up.sh"))         # base command; callers append side and cm
 # start = VLA training start pose (arm/train_start_pose.json, first frame of a training episode)
 paths = {}                  # name -> {"points": [[x, y, th], ...], "length": m, "end": [dx, dy]}
 seq = {"names": [], "i": -1, "abort": False, "route": None, "pause_until": None}
@@ -114,6 +115,7 @@ TRAIL_MAX = 20000
 log = collections.deque(maxlen=60)
 lock = threading.Lock()
 proc = {"p": None}
+vla_proc = {"p": None}
 ACTION_LOG = os.environ.get("ACTION_LOG", "/root/ta2_actions.jsonl")
 actions = collections.deque(maxlen=200)   # API records only, newest first
 current_action = [None]                  # worker reservation, retained until motion really ends
@@ -403,6 +405,15 @@ def run_arm(action, record=None):
             end_action(record, {"why": state["arm_last"], "returncode": rc, "output": last}, rc == 0)
 
 
+def _signal_vla_host(sig):
+    vp = vla_proc["p"]
+    if vp is not None and isinstance(getattr(vp, "pid", None), int) and vp.poll() is None:
+        try:
+            os.killpg(vp.pid, sig)
+        except ProcessLookupError:
+            pass
+
+
 def run_vla(tag, model_id, record=None):
     model = VLA_MODELS[model_id]
     label = model["name"]
@@ -413,7 +424,8 @@ def run_vla(tag, model_id, record=None):
             return
         command = shlex.split(os.environ["VLA_CMD"]) if os.environ.get("VLA_CMD") else model["command"]
         p = subprocess.Popen(command + [tag, str(model["seconds"]), str(model["speed"])], stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, text=True)
+                             stderr=subprocess.STDOUT, text=True, start_new_session=True)
+        vla_proc["p"] = p
         for line in p.stdout:
             line = line.rstrip()
             if not line or "multicast" in line or " INFO " in line or line.startswith("Current mode"):
@@ -427,12 +439,15 @@ def run_vla(tag, model_id, record=None):
         rc = p.wait()
         if result and "actuations" in result:
             why = result.get("error") or result["status"]
+            if result.get("status") == "succeeded" and result.get("hand"):
+                why = f"grasped ({result['hand']}) + lifted + stowed"
             state["vla_last"] = f"{label} / {tag}: {result['actuations']} steps, {why}"
         else:
             state["vla_last"] = f"{label} / {tag}: exited rc={rc} before running the policy (see log)"
     except Exception as e:  # noqa: BLE001
         state["vla_last"] = f"{label} / {tag}: error {e}"
     finally:
+        vla_proc["p"] = None
         with seq_lock:
             state["vla"] = None
             state["vla_model"] = None
@@ -452,12 +467,16 @@ def estop():
     try:
         seq["abort"] = True
         send("stop")
+        _signal_vla_host(mission_module.signal.SIGINT)
         subprocess.run(DEXEC + ["pkill", "-INT", "-f", ESTOP_PROCS], capture_output=True)
         for _ in range(30):            # up to 3 s for a clean exit (scripts hold their pose)
-            if subprocess.run(DEXEC + ["pgrep", "-f", ESTOP_PROCS], capture_output=True).returncode != 0:
+            vp = vla_proc["p"]
+            host_alive = vp is not None and isinstance(getattr(vp, "pid", None), int) and vp.poll() is None
+            if not host_alive and subprocess.run(DEXEC + ["pgrep", "-f", ESTOP_PROCS], capture_output=True).returncode != 0:
                 break
             time.sleep(0.1)
         else:
+            _signal_vla_host(mission_module.signal.SIGKILL)
             subprocess.run(DEXEC + ["pkill", "-KILL", "-f", ESTOP_PROCS], capture_output=True)
             note("E-STOP: scripts did not exit in 3 s, force-killed")
         r = subprocess.run(DEXEC + FSM_PAUSE, capture_output=True, text=True)
@@ -1424,6 +1443,7 @@ class Handler(BaseHTTPRequestHandler):
                     subprocess.run(ARM_STOP, capture_output=True)
                     note("STOP: arm script interrupted")
                 if state["vla"]:
+                    _signal_vla_host(mission_module.signal.SIGINT)
                     subprocess.run(DEXEC + ["pkill", "-INT", "-f", ESTOP_PROCS], capture_output=True)
                     note("STOP: VLA interrupted (arms hold where they are)")
             else:

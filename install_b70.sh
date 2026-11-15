@@ -10,8 +10,8 @@ install -m 755 move.sh web_move.py ta2_client.py /root/
 install -m 644 mission.py web_models.html vla_models.json /root/
 mkdir -p /root/openpi-xpu/client/outputs/arm
 install -m 644 arm/arm_pose.py arm/train_start_pose.json arm/read_arm_now.py arm/ik_offset.py arm/right_fk_fit.json arm/left_fk_fit.json arm/grasp_monitor.py /root/openpi-xpu/client/outputs/arm/
-install -m 755 arm/arm.sh arm/arm_down.sh /root/
-install -m 755 vla/vla_run.sh vla/vla_grasp_v3_step5000.sh vla/vla_grasp_v2_step4999.sh vla/vla_place.sh vla/pick_place.sh /root/
+install -m 755 arm/arm.sh arm/arm_down.sh arm/arm_up.sh /root/
+install -m 755 vla/vla_run.sh vla/vla_takeover.py vla/vla_grasp_v3_step5000.sh vla/vla_grasp_v2_step4999.sh vla/vla_place.sh vla/pick_place.sh /root/
 cp -n paths/*.csv /root/ta2_paths/ 2>/dev/null || true   # keep existing paths with the same name
 OLD=$(ss -ltnpH sport = :8088 | grep -o "pid=[0-9]*" | cut -d= -f2 || true)
 [ -n "$OLD" ] && kill "$OLD" && sleep 1.5

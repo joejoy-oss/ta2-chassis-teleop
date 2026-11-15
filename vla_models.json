@@ -10,7 +10,7 @@
       "container": "grasp-v3-step5000-policy",
       "command": ["/root/vla_grasp_v3_step5000.sh"],
       "seconds": 60,
-      "speed": 0.25
+      "speed": 0.5
     },
     {
       "id": "sandbag_v2_step4999",
@@ -21,7 +21,7 @@
       "container": "sandbag-step4999-policy",
       "command": ["/root/vla_grasp_v2_step4999.sh"],
       "seconds": 60,
-      "speed": 0.25
+      "speed": 0.5
     }
   ]
 }
