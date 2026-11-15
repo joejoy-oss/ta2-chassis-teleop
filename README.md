@@ -119,7 +119,7 @@ been checked with a tape measure.
 ## VLA grasp (`vla/vla_run.sh`)
 
 ```bash
-ssh -t root@192.168.31.228 /root/vla_run.sh run_01            # 120 s, max 0.5 rad/s
+ssh -t root@192.168.31.228 /root/vla_run.sh run_01            # 120 s, max 1.0 rad/s
 ssh -t root@192.168.31.228 /root/vla_run.sh run_02 60 0.25    # 60 s, max 0.25 rad/s
 ```
 
@@ -167,19 +167,25 @@ stood during data collection.
 预检确认底盘连接/API 模式、策略容器、四段路线、双臂反馈新鲜、当前双爪都未夹持后，执行：
 
 1. 路线 001→002（PATH_PAUSE=10 秒），到红区再停 ARRIVE_PAUSE=10 秒。
-2. 最多 ATTEMPTS=5 次：启动只读监视器，调用 VLA 包装脚本（每次策略 ATTEMPT_S=45 秒，限速 0.5，RESET=1）。
+2. 最多 ATTEMPTS=5 次：启动只读监视器，调用 VLA 包装脚本（每次策略 ATTEMPT_S=45 秒，限速 1.0，RESET=1，RTC 跟随所选模型）。
 3. 任一手持续满足抓取判定则立即中断 VLA，记下 hand；start_hold 收臂后确认仍夹持。
+   某只手空夹 1 秒（且另一只手没夹着东西）、或夹着却 10 秒没抬起，本次尝试立即判失败，停止整个 VLA 链
+   （复位脚本、开跑前探测、guarded_grasp），进入下一次，不再等满 45 秒。
 4. 路线 003→004，持续监测夹持；若掉落，当前路径完成后终止，不启动下一路径或放置。到达停 10 秒。
 5. `arm_down.sh <hand> 10`，再 `open_<hand>`，成功结束。五次全失败则 start 复位，停在红区。
 
 监视器 `arm/grasp_monitor.py` 在客户端容器中由 `python3 -u` 运行，每 0.1 秒输出 JSON。
 关节、夹爪、末端各自必须在 0.3 秒内有有效反馈；一条流新鲜不能掩盖另一条停滞。
-判定为 grip_pos 在 [0.06, 0.75] rad（真机空夹闭合实测：右爪 −0.047 rad、左爪 −0.059 rad；夹沙包边缘 p2 为 0.084 rad、中位 0.36–0.42 rad）、grip_eff ≤ −1.0 N·m（真机闭合/PAUSE 实测 ≤ −1.69 N·m，张开 +0.07~+0.20 N·m）、
-相对该次闭合高度抬升 ≥ 0.04 m，连续 1.5 秒。holding 仅使用位置/力矩条件。
+「夹着东西」（实心、薄片都算）= 夹爪在用力（grip_eff ≤ −1.0 N·m）且 grip_pos ≥ 该手空夹位置 + 0.01 rad、≤ 0.75 rad。
+空夹位置按手标定（HOLD_EMPTY_RIGHT / HOLD_EMPTY_LEFT）：右爪 −0.0485 rad（2026-11-15 五次实测，波动 < 0.0004），
+左爪暂用 −0.059（只测过一次，需用网页「夹爪标定记录」补测）。右爪实测：实体 0.37–0.56、薄片 −0.034–0.13、空夹 −0.0485。
+力矩不区分空夹与夹住（空夹也有 −1.71），只表示夹爪在用力。
+抓取成功 = 夹着东西且相对该次闭合高度抬升 ≥ 0.04 m，连续 1.5 秒。每次尝试只有在看到夹爪张开（> 0.75）之后才开始判定，
+夹爪每次重新张开都会清空闭合高度和计时（上一次尝试留下的合爪不会被误判）。每次尝试的夹爪读数以 ~10 Hz 写入全流程日志（grip 事件）。
 反馈丢失不会作为普通失败继续尝试。
 
 配置集中在 `mission.py` 顶部，并支持同名环境变量：ATTEMPTS、ATTEMPT_S、PROMPT、ARRIVE_PAUSE、
-PLACE_CM、HOLD_POS_MIN/MAX、HOLD_EFF_MAX、LIFT_MIN、HOLD_PERSIST、MISSION_LOG_DIR。
+PLACE_CM、HOLD_EMPTY_RIGHT/LEFT、HOLD_MARGIN、HOLD_POS_MAX、HOLD_EFF_MAX、LIFT_MIN、HOLD_PERSIST、EMPTY_PERSIST、NO_LIFT_S、MISSION_LOG_DIR。
 策略端口使用 MISSION_PORT（或 POLICY_PORT），默认 8000；`web_move.py` 的 PORT 仍为 HTTP 端口 8088。
 每次 API 请求可覆盖 attempts/prompt/port。MONITOR_TIMEOUT 默认 0.6 秒为监视器断流看门狗；
 SCRIPT_TIMEOUT 默认 90 秒为手臂/下降脚本时限，同时作为每次 VLA 复位和取帧的额外余量。

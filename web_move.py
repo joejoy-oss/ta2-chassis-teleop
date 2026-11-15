@@ -354,7 +354,8 @@ class GraspDetection:
             if self.detectors[side]["success"] and self.hand is None:
                 self.hand = side
             elif self.hand is None and self.no_grasp is None:
-                if self.detectors[side]["empty"]:
+                other = self.detectors.get("left" if side == "right" else "right") or {}
+                if self.detectors[side]["empty"] and not other.get("held"):
                     self.no_grasp = f"{side} gripper closed on nothing"
                 elif self.detectors[side]["no_lift"]:
                     self.no_grasp = f"{side} gripper holding but not lifted within {mission_module.NO_LIFT_S:g} s"

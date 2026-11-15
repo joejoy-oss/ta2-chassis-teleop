@@ -210,7 +210,8 @@ class EmptyGraspFailsFast(_MissionServer, unittest.TestCase):
         ends = {r["tag"]: r["t"] for r in records if r["event"] == "attempt_end"}
         starts = {r["tag"]: r["t"] for r in records if r["event"] == "attempt_start"}
         for tag in ends:
-            self.assertLess(ends[tag] - starts[tag], 3.5)                     # ATTEMPT_S is 4 s in these tests
+            # not during the leftover-closed reset phase (< 1.2 s), and well before ATTEMPT_S (4 s)
+            self.assertTrue(2.0 < ends[tag] - starts[tag] < 3.6, ends[tag] - starts[tag])
         self.assertTrue(any(r["event"] == "grip" for r in records))           # telemetry is logged
 
 

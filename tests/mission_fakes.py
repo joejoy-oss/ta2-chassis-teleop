@@ -62,8 +62,15 @@ def main():
             if loaded and now - st.get("began", now) > 0.10:
                 frame[side].update(grip_pos=0.39, grip_eff=-2.5,
                                    ee_z=-0.30 if now - st["began"] < 0.30 else -0.23)
-            if SCENARIO == "empty_fast" and st["stage"] == "vla" and now - st.get("began", now) > 0.10:
-                frame["left"].update(grip_pos=-0.06, grip_eff=-1.71)        # closed on nothing
+            if SCENARIO == "empty_fast" and st["stage"] == "idle":
+                frame["left"].update(grip_pos=-0.06, grip_eff=-1.71)        # left closed (empty) before the mission
+            if SCENARIO == "empty_fast" and st["stage"] == "vla":
+                # leftover closed-empty gripper until the reset opens it (1.2 s), open 0.3 s, then closed on nothing
+                age = now - st.get("began", now)
+                if age < 1.2 or age > 1.5:
+                    frame["left"].update(grip_pos=-0.06, grip_eff=-1.71)
+                else:
+                    frame["left"].update(grip_pos=1.05, grip_eff=0.2, ee_z=-0.30)
             if SCENARIO == "occupied":
                 frame["right"].update(grip_pos=0.4, grip_eff=-2.0)
             if (ROOT / "drop").exists():

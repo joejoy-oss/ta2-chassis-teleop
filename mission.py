@@ -88,11 +88,14 @@ def grasp_update(previous, sample, t, side=None):
              HOLD_PERSIST seconds without a break.
     empty:   closed on nothing for EMPTY_PERSIST seconds -> the attempt can be ended at once.
     no_lift: holding for NO_LIFT_S seconds without reaching success -> the attempt can be ended.
-    A fresh detector is used for each attempt. The first close height remains fixed; opening/invalid/
-    stale/gapped samples break every persistence interval.
+    held:    holding right now (lets the caller ignore an empty other hand while this one holds).
+    A fresh detector is used for each attempt. Nothing is judged until the gripper has been seen open in
+    this attempt (the previous attempt may leave it closed until the reset opens it). Every reopening
+    clears the close height and all timers; invalid/stale/gapped samples break every persistence interval.
     """
-    out = dict(previous or {"z_at_close": None, "since": None, "last_t": None, "empty_since": None, "hold_since": None})
-    out.update(success=False, empty=False, no_lift=False)
+    out = dict(previous or {"armed": False, "z_at_close": None, "since": None, "last_t": None,
+                            "empty_since": None, "hold_since": None})
+    out.update(success=False, empty=False, no_lift=False, held=False)
     if not finite(t) or (out["last_t"] is not None and t <= out["last_t"]):
         out.update(since=None, empty_since=None, hold_since=None)
         return out
@@ -104,17 +107,19 @@ def grasp_update(previous, sample, t, side=None):
         return out
     if gap:
         out.update(since=None, empty_since=None, hold_since=None)
+    if pos > HOLD_POS_MAX:                 # open: arm the detector, forget any earlier close
+        out.update(armed=True, z_at_close=None, since=None, empty_since=None, hold_since=None)
+        return out
+    if not out["armed"]:                   # still closed from before this attempt: judge nothing yet
+        return out
     if closed_empty(sample, side):
         out["empty_since"] = out["empty_since"] if out["empty_since"] is not None else t
         out["empty"] = t - out["empty_since"] >= EMPTY_PERSIST
     else:
         out["empty_since"] = None
-    if pos > HOLD_POS_MAX:
-        out.update(since=None, hold_since=None)
-        return out
     if out["z_at_close"] is None:
         out["z_at_close"] = z
-    held = holding(sample, side)
+    held = out["held"] = holding(sample, side)
     if held:
         out["hold_since"] = out["hold_since"] if out["hold_since"] is not None else t
     else:
@@ -282,7 +287,8 @@ class Mission:
                 if self.detectors[side]["success"] and self.success_hand is None:
                     self.success_hand = side
                 elif self.attempt_fail is None and self.success_hand is None:
-                    if self.detectors[side]["empty"]:
+                    other = self.detectors.get("left" if side == "right" else "right") or {}
+                    if self.detectors[side]["empty"] and not other.get("held"):   # the other hand may still win
                         self.attempt_fail = f"{side} gripper closed on nothing"
                     elif self.detectors[side]["no_lift"]:
                         self.attempt_fail = f"{side} gripper holding but not lifted within {NO_LIFT_S:g} s"
@@ -435,7 +441,9 @@ class Mission:
 
     def _stop_command(self, kind):
         # Killing docker-exec locally does not stop its container-side process.
-        pattern = "guarded_grasp.py" if kind == "vla" else "arm_pose.py"
+        # vla_run.sh = arm.sh start (arm_pose.py) -> live_observation_probe.py -> guarded_grasp.py: stop all of it,
+        # or a reset still moving in the container would race the next attempt's reset.
+        pattern = "guarded_grasp.py|arm_pose.py|live_observation_probe.py" if kind == "vla" else "arm_pose.py"
         override = {"vla": "VLA_CMD", "down": "ARM_DOWN_CMD", "arm": "ARM_CMD"}[kind]
         if not os.environ.get(override):
             subprocess.run(self.h.DEXEC + ["pkill", "-INT", "-f", pattern],

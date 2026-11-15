@@ -14,10 +14,11 @@ def sample(pos=0.39, eff=-2.5, z=-0.3, fresh=True):
 
 
 class GraspTests(unittest.TestCase):
-    def sequence(self, frames):
-        state = None
+    def sequence(self, frames, side=None, opened=True):
+        """By default the gripper is seen open just before the frames, as after a start-pose reset."""
+        state = grasp_update(None, sample(pos=1.05, eff=0.2), frames[0][0] - 0.05, side) if opened else None
         for t, f in frames:
-            state = grasp_update(state, f, t)
+            state = grasp_update(state, f, t, side)
         return state
 
     def test_open(self):
@@ -45,10 +46,23 @@ class GraspTests(unittest.TestCase):
         frames = [(0, sample())] + [(i / 10, sample(z=-0.24, eff=0 if i == 12 else -2.5)) for i in range(1, 26)]
         self.assertFalse(self.sequence(frames)["success"])
 
-    def test_reopen_keeps_first_close_height_and_breaks_hold(self):
+    def test_reopen_clears_close_height_and_breaks_hold(self):
         result = self.sequence([(0, sample()), (.1, sample(z=-.2)), (.2, sample(pos=1.05)), (.3, sample(z=-.1))])
-        self.assertEqual(result["z_at_close"], -.3)
+        self.assertEqual(result["z_at_close"], -.1)            # the close after the reopening counts
         self.assertFalse(result["success"])
+
+    def test_nothing_judged_until_seen_open(self):
+        """Previous attempt left the gripper closed on nothing (or holding) until the reset opens it."""
+        leftover = [(i / 10, sample(pos=-0.0485, eff=-1.71)) for i in range(30)]
+        state = self.sequence(leftover, "right", opened=False)
+        self.assertFalse(state["empty"] or state["success"] or state["no_lift"])
+        self.assertIsNone(state["z_at_close"])
+        lifted_leftover = [(0, sample())] + [(i / 10, sample(z=-.2)) for i in range(1, 30)]
+        self.assertFalse(self.sequence(lifted_leftover, opened=False)["success"])
+        # reset opens it, then the policy closes on nothing: empty after EMPTY_PERSIST
+        frames = leftover + [(3.1, sample(pos=1.05, eff=.2)), (3.5, sample(pos=1.0, eff=.2))]
+        frames += [(3.6 + i / 10, sample(pos=-0.0485, eff=-1.71)) for i in range(int(EMPTY_PERSIST * 10) + 2)]
+        self.assertTrue(self.sequence(frames, "right", opened=False)["empty"])
 
     def test_stale_gap_and_nonmonotonic(self):
         for t, f in [(1.5, sample(z=-.2, fresh=False)), (3, sample(z=-.2)), (.9, sample(z=-.2))]:
@@ -59,7 +73,7 @@ class GraspTests(unittest.TestCase):
         for bad in (None, math.nan, math.inf, "0.3", True):
             self.assertFalse(holding(sample(pos=bad)))
             self.assertFalse(holding(sample(eff=bad)))
-            self.assertFalse(grasp_update(None, sample(z=bad), 1)["success"])
+            self.assertFalse(self.sequence([(1, sample(z=bad))])["success"])
 
     def test_boundaries(self):
         for side in ("left", "right"):
@@ -94,16 +108,12 @@ class GraspTests(unittest.TestCase):
 
     def test_thin_grasp_lifted_succeeds(self):
         frames = [(0, sample(pos=-.03, eff=-1.73))] + [(i / 10, sample(pos=-.03, eff=-1.73, z=-.24)) for i in range(1, 18)]
-        state = None
-        for t, f in frames:
-            state = grasp_update(state, f, t, "right")
+        state = self.sequence(frames, "right")
         self.assertTrue(state["success"])
         self.assertFalse(state["empty"])
 
     def test_no_lift_flag(self):
-        state = None
-        for i in range(int(NO_LIFT_S * 10) + 2):
-            state = grasp_update(state, sample(), i / 10)
+        state = self.sequence([(i / 10, sample()) for i in range(int(NO_LIFT_S * 10) + 2)])
         self.assertTrue(state["no_lift"])
         self.assertFalse(state["success"])
 
