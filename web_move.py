@@ -175,6 +175,10 @@ def ensure_container():
         return
     note("starting client container")
     env = {**os.environ, "OPENPI_DIR": f"{DEPLOY}/client/openpi", "ZENOH_ENDPOINT": f"tcp/{ROBOT}:9000"}
+    r = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"], capture_output=True, text=True)
+    if CONTAINER in r.stdout.split():          # left in Exited state (e.g. after a B70 reboot): start refuses it
+        subprocess.run([f"{DEPLOY}/client/run_client.sh", "stop"], cwd=DEPLOY, env=env,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     subprocess.run([f"{DEPLOY}/client/run_client.sh", "start"], cwd=DEPLOY, env=env,
                    stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     time.sleep(8)
