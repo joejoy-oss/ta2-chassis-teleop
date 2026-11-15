@@ -72,7 +72,7 @@ class GuardTests(unittest.TestCase):
 
 class StubExecutionTests(unittest.TestCase):
     def run_stub(self, *, lose_mode=False, max_actions=3, max_seconds=15, inference_delay=0,
-                 subscribers=True, duplicate=False, partial_failure=False):
+                 subscribers=True, duplicate=False, partial_failure=False, rtc=False):
         envs = []
         clock = [10.0]
         mode = dict(meta_mode=1, left_arm_control_mode=1, right_arm_control_mode=1,
@@ -114,23 +114,29 @@ class StubExecutionTests(unittest.TestCase):
                     self._ros_interface.callback(types.SimpleNamespace(data=json.dumps({**mode, "meta_mode": 0})))
             def close(self): self.closed = True; return True
         class Policy:
-            def infer(self, obs, timeout):
+            chunk = 0
+            def infer(self, obs, timeout=None):
                 clock[0] += inference_delay
                 actions = np.zeros((30, 19)); actions[:, runner.GRIPPERS] = -1.0
                 actions[:, 16:] = 1.0
-                return {"actions": actions, "rtc/chunk_id": 1}
+                Policy.chunk += 1
+                return {"actions": actions, "rtc/chunk_id": Policy.chunk if rtc else 1}
         modules = {"examples": types.ModuleType("examples"), "examples.teleavatar_v2": types.ModuleType("teleavatar_v2"),
                    "examples.teleavatar_v2.env": types.ModuleType("env"), "std_msgs": types.ModuleType("std_msgs"),
                    "std_msgs.msg": types.ModuleType("msg")}
         modules["examples.teleavatar_v2.env"].TeleavatarEnvironment = Environment
         modules["std_msgs.msg"].String = type("String", (), {})
         args = types.SimpleNamespace(prompt="grasp", frequency=45, max_age=1, max_actions=max_actions,
-            max_seconds=max_seconds, replan_steps=8, max_speed=0.5, max_tracking=0.2, max_initial_gap=0.2)
+            max_seconds=max_seconds, replan_steps=8, max_speed=0.5, max_tracking=0.2, max_initial_gap=0.2,
+            rtc=rtc, rtc_delay=2 if rtc else None, rtc_horizon=5 if rtc else None)
         report = {}
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, modules), patch.object(runner.time, "monotonic", lambda: clock[0]), patch.object(runner, "dump_observation"):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, modules), patch.object(runner.time, "monotonic", lambda: clock[0]), patch.object(runner, "dump_observation") as dump:
             try: runner.execute(args, Policy(), Path(tmp), report, Event())
             except runner.GuardError:
                 if not (lose_mode or not subscribers or duplicate or partial_failure or inference_delay > 2): raise
+            plans = Path(tmp) / "inferences.jsonl"
+            report["_plans"] = [json.loads(l) for l in plans.read_text().splitlines()] if plans.exists() else []
+            report["_dumped"] = [c.args[0].name for c in dump.call_args_list]
         return envs[0], report
 
     def test_exact_count_no_chassis_no_final_release(self):
@@ -143,6 +149,18 @@ class StubExecutionTests(unittest.TestCase):
         self.assertFalse(report["extra_final_release_command_sent"])
         self.assertEqual(report["attempted_actuations"], 3)
         self.assertTrue(report["interface_publish_started"])
+
+    def test_rtc_logs_observation_seconds_actions_per_chunk(self):
+        env, report = self.run_stub(rtc=True, max_actions=40)
+        self.assertEqual(report["actuations"], 40)
+        plans = report["_plans"]
+        self.assertGreaterEqual(len(plans), 2)
+        for i, entry in enumerate(plans):
+            self.assertEqual(entry["inference"], i)
+            self.assertEqual(entry["observation"], f"observation_{i:03d}.npz")
+            self.assertIsInstance(entry["seconds"], float)
+            self.assertEqual(np.asarray(entry["actions19"]).shape, (30, 19))
+        self.assertEqual(report["_dumped"], [e["observation"] for e in plans] + ["final_observation.npz"])
 
     def test_mode_loss_stops_before_second_actuation(self):
         env, report = self.run_stub(lose_mode=True)

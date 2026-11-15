@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import concurrent.futures
 import json
 import math
 from pathlib import Path
@@ -177,6 +178,40 @@ def dump_observation(path, observation):
     np.savez_compressed(path, **observation)
 
 
+class RecordingPolicy:
+    """--rtc only: sits between RTCActionBroker and the policy (runs on the broker's worker thread) and keeps,
+    per returned chunk id, the observation sent, round-trip seconds and the 19D chunk, so the main loop can log
+    observation_NNN.npz / seconds / actions19 exactly like the synchronous mode when that chunk is installed."""
+
+    def __init__(self, policy):
+        self.policy = policy
+        self.lock = threading.Lock()
+        self.records = {}
+
+    def infer(self, request, timeout=None):
+        started = time.monotonic()
+        result = self.policy.infer(request) if timeout is None else self.policy.infer(request, timeout=timeout)
+        seconds = time.monotonic() - started
+        chunk_id = result.get("rtc/chunk_id")
+        with self.lock:
+            self.records[chunk_id] = {
+                "obs": {k: v for k, v in request.items() if not str(k).startswith("rtc/")},
+                "seconds": seconds, "actions19": np.asarray(result["actions"]),
+                "prev_chunk_id": request.get("rtc/prev_chunk_id"), "prefix_start": request.get("rtc/prefix_start")}
+        return result
+
+    def take(self, chunk_id):
+        """Return the record of chunk_id and drop it and every older one (bootstrap / superseded chunks)."""
+        with self.lock:
+            record = self.records.pop(chunk_id, None)
+            for key in [k for k in self.records if isinstance(k, int) and isinstance(chunk_id, int) and k < chunk_id]:
+                del self.records[key]
+        return record
+
+    def __getattr__(self, name):
+        return getattr(self.policy, name)
+
+
 def execute(args, policy, destination, report, stopped):
     # No ROS imports, node, publishers or heartbeat exist before this point.
     from examples.teleavatar_v2.env import TeleavatarEnvironment
@@ -195,6 +230,8 @@ def execute(args, policy, destination, report, stopped):
     last_obs = None
     status = "aborted"
     broker = None
+    recorder = None
+    writer = None
 
     def on_mode(message):
         try:
@@ -261,7 +298,9 @@ def execute(args, policy, destination, report, stopped):
         cursor = args.replan_steps
         if getattr(args, "rtc", False):
             from openpi_client import rtc as _rtc
-            broker = _rtc.RTCActionBroker(policy=policy, config=_rtc.RTCBrokerConfig(
+            recorder = RecordingPolicy(policy)
+            writer = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="obs-writer")
+            broker = _rtc.RTCActionBroker(policy=recorder, config=_rtc.RTCBrokerConfig(
                 control_frequency=args.frequency, inference_delay=getattr(args, "rtc_delay", None), execution_horizon=getattr(args, "rtc_horizon", None)))
             report["rtc_mode"] = "async RTCActionBroker (official openpi_client.rtc)"
         next_command_at = time.monotonic()
@@ -286,9 +325,17 @@ def execute(args, policy, destination, report, stopped):
                     report["rtc_last_chunk"] = chunk_id
                     report["rtc_inference_delay"] = broker.inference_delay
                     report["rtc_execution_horizon"] = broker.execution_horizon
-                    plans.write(json.dumps({"inference": report["live_inferences"] - 1, "at": utc_now(), "rtc_chunk_id": chunk_id,
-                                            "delay_steps": broker.inference_delay, "horizon_steps": broker.execution_horizon},
-                                           ensure_ascii=False) + "\n")
+                    index = report["live_inferences"] - 1
+                    entry = {"inference": index, "at": utc_now(), "rtc_chunk_id": chunk_id,
+                             "delay_steps": broker.inference_delay, "horizon_steps": broker.execution_horizon}
+                    record = recorder.take(chunk_id)
+                    if record is not None:
+                        # npz compression runs on a writer thread so the 45 Hz command loop never waits on disk.
+                        writer.submit(dump_observation, destination / f"observation_{index:03d}.npz", record["obs"])
+                        entry.update({"seconds": record["seconds"], "observation": f"observation_{index:03d}.npz",
+                                      "rtc_prev_chunk_id": record["prev_chunk_id"], "rtc_prefix_start": record["prefix_start"],
+                                      "actions19": record["actions19"].tolist()})
+                    plans.write(json.dumps(entry, ensure_ascii=False) + "\n")
                     if first:
                         last_obs = fresh()           # calibration took ~1-2 s: re-read everything before moving
             elif actions is None or cursor >= args.replan_steps:
@@ -346,6 +393,8 @@ def execute(args, policy, destination, report, stopped):
                 broker._executor.shutdown(wait=False, cancel_futures=True)
         except Exception:  # noqa: BLE001
             pass
+        if writer is not None:
+            writer.shutdown(wait=True)              # finish the queued observation_NNN.npz files
         report["actuations"] = count
         report["attempted_actuations"] = attempted
         report["actuation_count_scope"] = "Completed apply_action calls; each attempts two arm and two gripper publishes. A failed call may partially publish."
