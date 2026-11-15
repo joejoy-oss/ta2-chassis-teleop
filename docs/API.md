@@ -11,7 +11,7 @@ API 与网页共用机器人、序列锁、底层动作函数和急停；全流�
 - 路径从当前位置和朝向出发，先确认起点、朝向和周围空间。关闭客户端、等待超时或网络断开不会取消路径。
 - **路线运行期间（含路径间暂停），所有 POST 只放行 `/estop` 和 `/api/v1/estop`。**
   软停、cancel、新动作、网页其他按钮均拒绝；API 返回 `409 ROUTE_ESTOP_ONLY`。
-- 单独的 `vla.grasp` 固定执行 60 秒，速度上限 0.5 rad/s，提示词「抓取沙包」。动作成功表示程序正常执行结束，**不判断抓取是否成功**。
+- `vla.grasp` 默认使用网页选中模型的时长、限速和提示词；可指定单次 model / seconds。默认不判断抓取成功，只有 `stop_on_grasp: true` 才会按全流程判据检测并提前停止。
 - 全流程运行及中止清理期间，所有其他 POST 返回 `409 MISSION_ESTOP_ONLY`，只放行两个急停端点。
 - 同时只执行一个动作。网页的全流程创建 API 动作记录；其他网页动作只占用忙状态。
 
@@ -21,6 +21,9 @@ API 与网页共用机器人、序列锁、底层动作函数和急停；全流�
 |---|---|---|
 | GET | `/api/v1/health` | 200，服务和忙状态 |
 | GET | `/api/v1/state` | 200，结构化快照 |
+| GET | `/api/v1/grippers` | 200，左右夹爪和手腕实时读数 |
+| GET | `/api/v1/preflight?model=<id>` | 200，`{"ok": bool, "checks": [...]}`；model 可省略 |
+| GET | `/api/v1/models` | 200，模型、RTC、容器运行和选中状态 |
 | GET | `/api/v1/capabilities` | 200，动作参数、已加载路径、路线、姿态、VLA 常量 |
 | GET | `/api/v1/actions?limit=20` | 200，`{"actions": [...]}`，新的在前 |
 | GET | `/api/v1/actions/<id>` | 200，动作记录 |
@@ -70,8 +73,14 @@ POST 控制端点不需要请求体；启动动作使用 `Content-Type: applicat
     "chassis.step":{"direction":["forward","back","left","right","ccw","cw"]},
     "path.run":{"name":"loaded path name"},
     "path.run_all":{},"route.run":{"route":["g2r","r2g"]},
-    "arm.pose":{"pose":["raise","lower","start","start_hold","down5","open_right","close_right","open_left","close_left"]},"vla.grasp":{},"odom.reset":{},
-    "mission.run":{"attempts":"optional integer","prompt":"optional string","port":"optional integer"}
+    "arm.pose":{"pose":["raise","lower","start","start_hold","down5","open_right","close_right","open_left","close_left"]},
+    "arm.down":{"hand":["left","right"],"cm":"number from 0.5 to 15"},
+    "vla.grasp":{
+      "model":"optional registered model id (default: selected model)",
+      "seconds":"optional number from 1 to 120 (default: model seconds)",
+      "stop_on_grasp":"optional boolean (default: false)"
+    },"odom.reset":{},
+    "mission.run":{"attempts":"optional integer","prompt":"optional string","port":"optional integer","rtc":"optional boolean (default: the selected model's mode)"}
   },
   "paths":["001","002","003","004"],
   "routes":[
@@ -79,7 +88,7 @@ POST 控制端点不需要请求体；启动动作使用 `Content-Type: applicat
     {"id":"r2g","name":"红 → 绿","paths":["003","004"]}
   ],
   "arm_poses":["raise","lower","start","start_hold","down5","open_right","close_right","open_left","close_left"],
-  "vla":{"seconds":60,"max_rad_s":0.5,"prompt":"抓取沙包"}
+  "vla":{"seconds":60,"max_rad_s":1.0,"prompt":"抓取红色沙包","model":"grasp_v3_step10000"}
 }
 ```
 
@@ -120,20 +129,104 @@ POST 控制端点不需要请求体；启动动作使用 `Content-Type: applicat
 | `path.run_all` | `{}` | 当前所有路径按名称顺序，现有序列 runner 的 `finished` 成功 |
 | `route.run` | `{"route":"g2r"}` | g2r=001→002，r2g=003→004；复用序列 runner，保留 `route_last` |
 | `arm.pose` | `{"pose":"start"}` | 所有 `ARM_TIME` 动作（见 capabilities）；`down5` 调用 `arm_down.sh right 5`；脚本退出码和 `arm_last` |
-| `vla.grasp` | `{}` | 检查推理容器后运行现有脚本；正常跑满时限 `time_limit` 成功 |
+| `arm.down` | `{"hand":"left","cm":7.5}` | left/right，0.5–15 cm（含端点）；复用手臂执行/忙/停止逻辑，底层 `arm_down.sh left 7.5` 自动限位 |
+| `vla.grasp` | `{"model":"grasp_v3_step10000_rtc","seconds":60,"stop_on_grasp":true}`（均可省略） | 单次选择模型和时长；可在任一手抓取成功后立即停 VLA |
 | `mission.run` | `{"attempts":5,"prompt":"抓取沙包","port":8000}`（均可省略） | 预检通过后异步执行全流程；监测抓取成功并用同一只手放置 |
 | `odom.reset` | `{}` | 发送现有 `reset_pose`，发送成功立即 succeeded |
 
-参数必须匹配动作类型；无参数动作可以省略 params。`mission.run` 的可选参数仅限 attempts/prompt/port；其余动作参数不变。
+参数必须匹配动作类型；无参数动作可以省略 params。`mission.run` 保留现有 attempts/prompt/port/rtc 参数与行为。
 序列保留现有路径间 `PATH_PAUSE`（默认 10 秒）。
 
 VLA 的终态 result 保留脚本 JSON 的原始字段，并带 `status`、`actuations`、`error`、`report`、
-`tag`、`returncode`。脚本未提供 report 时使用现有输出目录约定路径；该路径不表示报告文件已验证存在。
+`tag`、`returncode`、`model`、`rtc`、`seconds`、`grasped`、`hand`。脚本未提供 report 时使用现有输出目录约定路径；该路径不表示报告文件已验证存在。
 例如：
 
 ```json
-{"status":"time_limit","actuations":42,"error":null,"report":"/root/openpi-xpu/client/outputs/vla_web_20261115_100000/report.json","tag":"vla_web_20261115_100000","returncode":0}
+{"status":"time_limit","actuations":42,"error":null,"report":"/root/openpi-xpu/client/outputs/vla_web_20261115_100000/report.json","tag":"vla_web_20261115_100000","returncode":0,"model":"grasp_v3_step10000","rtc":false,"seconds":60,"grasped":null,"hand":null}
 ```
+
+## 单独下降与抓取
+
+```json
+{"type":"arm.down","params":{"hand":"right","cm":7.5}}
+```
+
+仍返回 HTTP 202 和 action_id。成功时动作 status 为 succeeded，result 示例：
+
+```json
+{"why":"arms down: done","returncode":0,"output":"...最后最多 8 行有效脚本输出..."}
+```
+
+失败保留退出码与输出，动作 error 使用 SCRIPT_ERROR。cm 必须是有限数字，不能是字符串或布尔值。
+原 `arm.pose` 的 `down5` 仍按原逻辑调用 `arm_down.sh right 5`。
+
+```json
+{"type":"vla.grasp","params":{"model":"grasp_v3_step10000_rtc","seconds":60,"stop_on_grasp":true}}
+```
+
+model 必须是 `/api/v1/models` 的 id，同步版与 `_rtc` 版各自独立；省略时绑定请求开始时的网页选择。
+指定 model 不保存选择，也不改变网页。seconds 为 1–120 的有限数字，默认该模型的 seconds；
+stop_on_grasp 必须是布尔值，默认 false。网页「开始抓取」仍走旧逻辑，不启用检测。
+
+启用检测前必须拿到新鲜监控数据，否则 HTTP 503 MONITOR_DOWN，VLA 不启动。
+每次调用独立初始化左右检测器，每帧使用 `mission.grasp_update`，沿用闭爪高度、负载、抬升和持续时间判据。
+任一手成功后调用与网页 STOP 相同的 `end_vla_runner()` 和容器内 `pkill -INT`，不复位、不收臂；
+动作 status 为 succeeded，即使主动中断导致脚本非零退出。result 示例：
+
+```json
+{"grasped":true,"hand":"left","model":"grasp_v3_step10000_rtc","rtc":true,"seconds":60,"status":"succeeded","actuations":42,"error":null,"report":"/root/openpi-xpu/client/outputs/vla_trial/report.json","tag":"vla_trial","returncode":130}
+```
+
+seconds 是配置的策略运行时长，不是实际耗时；actuations 在脚本没提供报告时为 null。
+未启用检测时 grasped / hand 为 null；启用后未检测到成功时 grasped 为 false、hand 为 null，
+脚本正常跑满仍可 succeeded / time_limit，所以应看 grasped 判断是否抓到。
+运行中反馈断流会停止 VLA 并记 failed / FEEDBACK_LOST。
+用户 STOP／急停仍记 aborted / STOPPED 或 ESTOP，不会被检测成功覆盖。
+
+## 夹爪、预检与模型（只读）
+
+`GET /api/v1/grippers`：
+
+```json
+{"left":{"pos":1.05,"eff":0.2,"ee_z":-0.30,"fresh":true,"holding":false},"right":{"pos":0.39,"eff":-2.5,"ee_z":-0.23,"fresh":true,"holding":true},"age_s":0.02,"source":"monitor"}
+```
+
+pos 单位 rad，eff 单位 Nm，ee_z 单位 m。holding 直接使用 `mission.holding` 的位置／力矩判据；
+它不等于经过抬升与持续时间确认的抓取成功。
+首次读取按 `mission.Mission._monitor_cmd` 启动只读 `mission.Monitor`，支持相同的 MONITOR_CMD 覆盖；
+不启动容器，不发送运动或 FSM 指令。监控进程退出后下一次请求自动重启；最多等待 3 秒取得数值读数，
+启动失败、退出或仍无读数返回 503 MONITOR_DOWN。已有读数变陈旧时保留读数并返回 fresh=false、实际 age_s；
+预检将其标记为失败，启用抓取检测的动作则必须等到新鲜反馈，否则返回 MONITOR_DOWN。
+
+夹爪接口与单次抓取共用一个后台监控，避免重复订阅与重复进程；每次抓取注册独立检测器，结束即移除。
+全流程保留自己的监控和原有行为。STOP／急停可能杀掉后台监控，后续读取会自动恢复。
+
+`GET /api/v1/preflight` 或 `GET /api/v1/preflight?model=grasp_v3_step10000_rtc`：
+
+```json
+{"ok":true,"checks":[
+  {"name":"policy","ok":true,"detail":"grasp_v3_step10000_rtc"},
+  {"name":"left_gripper","ok":true,"detail":"fresh=True, holding=False"},
+  {"name":"right_gripper","ok":true,"detail":"fresh=True, holding=False"},
+  {"name":"connected","ok":true,"detail":"chassis connection"},
+  {"name":"api_mode","ok":true,"detail":"robot API mode"},
+  {"name":"estop_clear","ok":true,"detail":"emergency stop inactive"},
+  {"name":"idle","ok":true,"detail":"no web or API action running"},
+  {"name":"paths","ok":true,"detail":"001–004 loaded"}
+]}
+```
+
+model 默认当前选中模型，不改变选择。检查失败仍返回 HTTP 200、ok=false，并在对应项 detail 中说明原因；
+例如监控失败对应两只 gripper 的 ok=false 和 MONITOR_DOWN 原因，策略失败对应 policy 的 POLICY_DOWN 原因。
+未知 model 返回 400 UNKNOWN_MODEL。该接口不锁定后续动作，也不保证检查后机器人状态不变。
+
+`GET /api/v1/models` 示例（models 数组实际包含全部注册模型）：
+
+```json
+{"selected":"grasp_v3_step10000","models":[{"id":"grasp_v3_step10000","name":"最新模型 v3 · 10000 步","training":"122 段演示 · 11 月 15 日","prompt":"抓取红色沙包","seconds":60,"speed":1.0,"rtc":false,"running":true,"selected":true}]}
+```
+
+每项含 public_model 全部字段、推理容器的 running 和 selected 标记；只读 Docker 状态，不启动或停止服务。
 
 ## 停止与取消
 
@@ -170,6 +263,7 @@ VLA 的终态 result 保留脚本 JSON 的原始字段，并带 `status`、`actu
 | `BAD_REQUEST` | 400 | 未知动作、参数或 JSON 不合法、limit 越界 |
 | `UNKNOWN_PATH` | 400 | 路径不存在、路线所需路径缺失或无路径 |
 | `UNKNOWN_ROUTE` | 400 | 非 g2r / r2g |
+| `UNKNOWN_MODEL` | 400 | 未注册的 model id |
 | `NOT_FOUND` | 404 | 端点或动作 ID 不存在 |
 | `BUSY` | 409 | 网页或 API 动作仍占用机器人 |
 | `ESTOP_ACTIVE` | 409 | 急停流程执行中 |
@@ -179,6 +273,7 @@ VLA 的终态 result 保留脚本 JSON 的原始字段，并带 `status`、`actu
 | `NOT_RUNNING` | 409 | 取消目标已经结束 |
 | `NOT_CONNECTED` | 503 | 动作启动前 teleop 未连接 |
 | `POLICY_DOWN` | 503 | VLA 推理容器未运行或检查失败 |
+| `MONITOR_DOWN` | 503 | 监控无法启动、已退出、3 秒内无数值读数；启用检测的抓取还要求新鲜反馈 |
 | `TELEOP_DISCONNECTED` | 动作错误 / 503 控制错误 | teleop 断开或写入失败 |
 | `TIMEOUT` | 动作错误 | 运动超时 |
 | `STUCK` | 动作错误 | 路径无进展 |
@@ -209,8 +304,22 @@ print(c.actions(limit=20))
 ```
 
 便捷方法 `run_route(route)`、`run_path(name)`、`run_all()`、`arm_pose(pose)`、`vla_grasp()`、
-`step(direction)`、`reset_odom()` 默认 `wait=False`，返回 action_id；`wait=True` 返回终态记录。
+`arm_down(hand, cm)`、`step(direction)`、`reset_odom()` 默认 `wait=False`，返回 action_id；`wait=True` 返回终态记录。
 都支持 timeout、poll、raise_on_fail。`wait` 默认 `raise_on_fail=False`，直接返回失败/中止记录。
+
+```python
+print(c.models())
+print(c.preflight(model="grasp_v3_step10000_rtc"))
+print(c.grippers())
+c.arm_down("left", 7.5, wait=True, raise_on_fail=True)
+record = c.vla_grasp(model="grasp_v3_step10000_rtc", seconds=60,
+                     stop_on_grasp=True, wait=True, raise_on_fail=True)
+print(record["result"]["grasped"], record["result"]["hand"])
+```
+
+`vla_grasp()` 和 `vla_grasp(wait=True)` 保持兼容；完整签名为
+`vla_grasp(model=None, seconds=None, stop_on_grasp=False, wait=False, timeout=300, poll=0.5, raise_on_fail=False)`。
+`grippers()`、`preflight(model=None)`、`models()` 直接返回上述 JSON 对象。
 
 HTTP 错误抛 `TA2Error`，含 code、message、http_status；网络错误使用 CONNECTION_ERROR，
 http_status 为 None。等待超时抛 `TA2Timeout`，**不会自动停机器人**。

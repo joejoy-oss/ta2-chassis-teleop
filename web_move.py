@@ -39,6 +39,7 @@ the hardware emergency stop within reach.
 Motion is done by teleop.py, a long-running ROS node inside the openpi-xpu-client
 container, fed over stdin. If this server exits, teleop.py sees EOF, sends zero and exits.
 """
+import atexit
 import collections
 import copy
 import datetime
@@ -121,6 +122,7 @@ pending_motion = [None]                  # includes web commands awaiting teleop
 terminal_claims = {}                     # atomic pop chooses exactly one terminal status
 log_claims = {}                          # append once, after the worker supplies its result
 action_logs = queue.SimpleQueue()
+estop_generation = [0]  # catches an E-STOP that finishes during API preflight
 
 
 class APIError(Exception):
@@ -170,7 +172,7 @@ def end_action(action, result, success=False, code=None, release=True):
             elif text in ("stopped", "released") or text.startswith("stopped before ") or "cancel" in text:
                 code = "STOPPED"
             else:
-                code = "SCRIPT_ERROR" if action["type"] in ("arm.pose", "vla.grasp") else "ACTION_FAILED"
+                code = "SCRIPT_ERROR" if action["type"] in ("arm.pose", "arm.down", "vla.grasp") else "ACTION_FAILED"
         action.update(status="succeeded" if success else "aborted" if code in ("ESTOP", "STOPPED") else "failed",
                       ended_at=timestamp(), result=result,
                       error=None if success else {"code": code, "message": why})
@@ -191,7 +193,11 @@ def interrupt_action(code):
         result = {"why": why}
         if action["type"] == "vla.grasp":
             tag = state["vla"]
-            result.update(status="aborted", actuations=None, error=why, tag=tag,
+            model_id = action["params"].get("model", state["vla_selected"])
+            result.update(model=model_id, rtc=model_rtc(VLA_MODELS[model_id]),
+                          seconds=action["params"].get("seconds", VLA_MODELS[model_id]["seconds"]),
+                          grasped=False if action["params"].get("stop_on_grasp") else None, hand=None,
+                          status="aborted", actuations=None, error=why, tag=tag,
                           report=f"/root/openpi-xpu/client/outputs/{tag}/report.json")
         end_action(action, result, code=code, release=False)
 
@@ -205,10 +211,11 @@ def start_sequence(names, route=None, action=None):
     threading.Thread(target=run_sequence, args=(names, action), daemon=True).start()
 
 
-def start_arm(pose, action=None):
+def start_arm(pose, action=None, down=None):
     state["arm"] = pose
-    note(f"arms: {pose} ({ARM_TIME[pose]} s)")
-    threading.Thread(target=run_arm, args=(pose, action), daemon=True).start()
+    detail = f"{down[0]}, {down[1]} cm" if down else f"{ARM_TIME[pose]} s"
+    note(f"arms: {pose} ({detail})")
+    threading.Thread(target=run_arm, args=(pose, action, down), daemon=True).start()
 
 
 def model_rtc(model):
@@ -270,13 +277,143 @@ def check_policy(port=None, model_id=None):
         raise APIError(503, "POLICY_DOWN", f"{model['name']} 的模型服务未运行")
 
 
-def start_vla(action=None, model_id=None):
+class GripperMonitor:
+    """One lazy read-only stream; per-action listeners never survive an attempt."""
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.start_lock = threading.Lock()
+        self.monitor = None
+        self.listeners = set()
+
+    def observe(self, frame):
+        with self.lock:
+            for listener in self.listeners:
+                listener.observe(frame)
+
+    def get(self, require_fresh=True):
+        # Never ensure_container here: read-only requests must not start services.
+        with self.start_lock:
+            if self.monitor is None or self.monitor.p.poll() is not None:
+                if self.monitor:
+                    self.monitor.close()
+                self.monitor = None
+                try:
+                    self.monitor = mission_module.Monitor(mission._monitor_cmd(), self.observe)
+                except OSError as exc:
+                    raise APIError(503, "MONITOR_DOWN", str(exc)) from exc
+            monitor = self.monitor
+        deadline = time.monotonic() + 3
+        while True:
+            frame = monitor.frame
+            has_data = frame is not None and all(mission_module.finite(frame[side].get(key))
+                       for side in mission_module.SIDES for key in ("grip_pos", "grip_eff", "ee_z"))
+            if monitor.p.poll() is None and (monitor.fresh() if require_fresh else has_data):
+                return monitor
+            if monitor.p.poll() is not None or time.monotonic() >= deadline:
+                raise APIError(503, "MONITOR_DOWN", "no usable arm/gripper/EE feedback within 3 seconds")
+            time.sleep(.02)
+
+    def readings(self):
+        monitor = self.get(require_fresh=False)
+        frame, received = monitor.frame, monitor.received
+        age = max(0, time.monotonic() - received)
+        out = {"age_s": age, "source": "monitor"}
+        for side in mission_module.SIDES:
+            sample = frame[side]
+            out[side] = {"pos": sample.get("grip_pos"), "eff": sample.get("grip_eff"), "ee_z": sample.get("ee_z"),
+                         "fresh": bool(monitor.p.poll() is None and age < mission_module.MONITOR_TIMEOUT
+                                       and sample.get("fresh") is True
+                                       and all(mission_module.finite(sample.get(k)) for k in ("grip_pos", "grip_eff", "ee_z"))),
+                         "holding": mission_module.holding(sample)}
+        return out
+
+    def close(self):
+        if self.monitor:
+            self.monitor.close()
+
+
+class GraspDetection:
+    def __init__(self, monitor):
+        self.monitor = monitor
+        self.detectors = {}
+        self.hand = None
+        self.fault = None
+        self.done = threading.Event()
+
+    def observe(self, frame):
+        if self.hand or self.fault:
+            return
+        if not self.monitor.fresh():
+            self.fault = "arm feedback lost"
+            return
+        for side in mission_module.SIDES:
+            self.detectors[side] = mission_module.grasp_update(self.detectors.get(side), frame[side], frame["t"])
+            if self.detectors[side]["success"] and self.hand is None:
+                self.hand = side
+
+    def watch(self, record):
+        while not self.done.wait(.02):
+            with gripper_monitor.lock:
+                if not self.hand and not self.monitor.fresh():
+                    self.fault = "arm feedback lost"
+                should_stop = self.hand is not None or self.fault is not None
+            if record["status"] != "running":
+                return  # external STOP/E-STOP owns cancellation
+            if should_stop:
+                # Do not interrupt_action: a detected grasp is a successful completion.
+                stop_vla_motion()
+                return
+
+
+gripper_monitor = GripperMonitor()
+atexit.register(gripper_monitor.close)
+
+
+def resolve_model(model_id):
+    if not isinstance(model_id, str) or model_id not in VLA_MODELS:
+        raise APIError(400, "UNKNOWN_MODEL", "unknown model: " + str(model_id))
+    return model_id
+
+
+def api_preflight(model_id):
+    resolve_model(model_id)
+    checks = []
+
+    def add(name, ok, detail):
+        checks.append({"name": name, "ok": bool(ok), "detail": detail})
+
+    try:
+        check_policy(model_id=model_id)
+        add("policy", True, model_id)
+    except APIError as exc:
+        add("policy", False, exc.code + ": " + exc.message)
+    try:
+        readings = gripper_monitor.readings()
+        for side in mission_module.SIDES:
+            sample = readings[side]
+            add(side + "_gripper", sample["fresh"] and not sample["holding"],
+                f"fresh={sample['fresh']}, holding={sample['holding']}")
+    except APIError as exc:
+        for side in mission_module.SIDES:
+            add(side + "_gripper", False, exc.code + ": " + exc.message)
+    with seq_lock:
+        add("connected", state["connected"], "chassis connection")
+        add("api_mode", state["mode_ok"] is True, "robot API mode")
+        add("estop_clear", not state["estop"], "emergency stop inactive")
+        add("idle", not busy(), "no web or API action running")
+        missing = [name for name in ("001", "002", "003", "004") if name not in paths]
+        add("paths", not missing, "missing: " + ", ".join(missing) if missing else "001–004 loaded")
+    return {"ok": all(check["ok"] for check in checks), "checks": checks}
+
+
+def start_vla(action=None, model_id=None, monitor=None):
     model_id = model_id or state["vla_selected"]
     model = VLA_MODELS[model_id]
     tag = time.strftime(f"vla_{model_id}_%Y%m%d_%H%M%S_") + str(time.time_ns() % 1000000)
     state["vla"], state["vla_model"] = tag, model_id
-    note(f"VLA grasp started: {model['name']} / {tag} ({model['seconds']} s, max {model['speed']} rad/s)")
-    args = (tag, model_id) if action is None else (tag, model_id, action)
+    seconds = action["params"].get("seconds", model["seconds"]) if action else model["seconds"]
+    note(f"VLA grasp started: {model['name']} / {tag} ({seconds} s, max {model['speed']} rad/s)")
+    args = (tag, model_id) if action is None else (tag, model_id, action, monitor)
     threading.Thread(target=run_vla, args=args, daemon=True).start()
     return tag
 
@@ -384,21 +521,44 @@ def run_sequence(names, action=None, guard=None, boundary=None):
     return result
 
 
-def run_arm(action, record=None):
+arm_proc = [None]  # stop host-side descent preparation before it can launch a later step
+
+
+def end_arm_runner():
+    p = arm_proc[0]
+    if p is not None and p.poll() is None:
+        try:
+            p.terminate()
+        except ProcessLookupError:
+            pass
+
+
+def run_arm(action, record=None, down=None):
     rc, last = None, ""
+    tail = collections.deque(maxlen=8)
     try:
         ensure_container()
         if state["estop"] or (record and record["status"] != "running"):
             return
-        cmd = ARM_DOWN_CMD + ["right", "5"] if action == "down5" else ARM_CMD + [action, "--time", str(ARM_TIME[action])]
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, text=True)
+        if action == "down5":
+            down = ("right", 5)
+        cmd = ARM_DOWN_CMD + [down[0], str(down[1])] if down else ARM_CMD + [action, "--time", str(ARM_TIME[action])]
+        with seq_lock:
+            if state["estop"] or (record and record["status"] != "running"):
+                return
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, text=True)
+            arm_proc[0] = p
+            if state["estop"] or (record and record["status"] != "running"):
+                end_arm_runner()
+                subprocess.run(ARM_STOP, capture_output=True)
         last = ""
         for line in p.stdout:
             line = line.rstrip()
             if line and "multicast" not in line and not line.startswith("Current mode"):
                 note("arm: " + line)
                 last = line
+                tail.append(line)
         rc = p.wait()
         state["arm_last"] = f"arms {action}: " + ("done" if rc == 0 else f"stopped ({last})")
     except Exception as e:  # noqa: BLE001
@@ -406,8 +566,10 @@ def run_arm(action, record=None):
         note(state["arm_last"])
     finally:
         with seq_lock:
+            arm_proc[0] = None
             state["arm"] = None
-            end_action(record, {"why": state["arm_last"], "returncode": rc, "output": last}, rc == 0)
+            end_action(record, {"why": state["arm_last"], "returncode": rc,
+                                "output": "\n".join(tail) if record and record["type"] == "arm.down" else last}, rc == 0)
 
 
 vla_proc = [None]   # host-side VLA runner (vla_run.sh); STOP / E-STOP end it so it cannot start a later step
@@ -424,18 +586,39 @@ def end_vla_runner():
             pass
 
 
-def run_vla(tag, model_id, record=None):
+def stop_vla_motion():
+    end_vla_runner()
+    subprocess.run(DEXEC + ["pkill", "-INT", "-f", ESTOP_PROCS], capture_output=True)
+
+
+def run_vla(tag, model_id, record=None, monitor=None):
     model = VLA_MODELS[model_id]
     label = model["name"]
     result, rc = None, None
+    seconds = record["params"].get("seconds", model["seconds"]) if record else model["seconds"]
+    detection = GraspDetection(monitor) if monitor else None
+    watcher = None
     try:
         ensure_container()
         if state["estop"] or (record and record["status"] != "running"):
             return
         command = shlex.split(os.environ["VLA_CMD"]) if os.environ.get("VLA_CMD") else model["command"]
-        p = subprocess.Popen(command + [tag, str(model["seconds"]), str(model["speed"])], stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, text=True)
-        vla_proc[0] = p
+        with seq_lock:
+            if state["estop"] or (record and record["status"] != "running"):
+                return
+            if monitor and not monitor.fresh():
+                raise RuntimeError("arm feedback lost before VLA launch")
+            p = subprocess.Popen(command + [tag, str(seconds), str(model["speed"])], stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, text=True)
+            vla_proc[0] = p
+            if detection:
+                with gripper_monitor.lock:
+                    gripper_monitor.listeners.add(detection)
+                watcher = threading.Thread(target=detection.watch, args=(record,), daemon=True)
+                watcher.start()
+            # E-STOP bypasses seq_lock; catch it even if it raced with Popen.
+            if state["estop"] or (record and record["status"] != "running"):
+                stop_vla_motion()
         for line in p.stdout:
             line = line.rstrip()
             if not line or "multicast" in line or " INFO " in line or line.startswith("Current mode"):
@@ -455,6 +638,12 @@ def run_vla(tag, model_id, record=None):
     except Exception as e:  # noqa: BLE001
         state["vla_last"] = f"{label} / {tag}: error {e}"
     finally:
+        if detection:
+            detection.done.set()
+            with gripper_monitor.lock:
+                gripper_monitor.listeners.discard(detection)
+            if watcher:
+                watcher.join()  # keep the reservation until its stop command has finished
         vla_proc[0] = None
         with seq_lock:
             state["vla"] = None
@@ -465,9 +654,21 @@ def run_vla(tag, model_id, record=None):
             detail.setdefault("actuations", None)
             detail.setdefault("error", None if rc == 0 and result else state["vla_last"])
             detail.setdefault("report", f"/root/openpi-xpu/client/outputs/{tag}/report.json")
-            detail.update(tag=tag, model=model_id, returncode=rc)
+            detail.update(tag=tag, model=model_id, rtc=model_rtc(model), seconds=seconds, returncode=rc,
+                          grasped=bool(detection.hand) if detection else None,
+                          hand=detection.hand if detection else None)
             ok = rc == 0 and not detail["error"] and detail["status"] in ("time_limit", "done", "finished", "succeeded")
-            end_action(record, detail, ok)
+            code = None
+            if detection and detection.hand:
+                detail.update(status="succeeded", error=None)
+                state["vla_last"] = f"{label} / {tag}: grasped ({detection.hand})"
+                ok = True
+            elif detection and (detection.fault or (monitor and not monitor.fresh())):
+                detail.update(status="feedback_lost", error=detection.fault or "arm feedback lost")
+                ok, code = False, "FEEDBACK_LOST"
+            if record and record["status"] == "aborted":
+                detail.update(status="aborted", error=record["error"]["message"], grasped=False if detection else None, hand=None)
+            end_action(record, detail, ok, code=code)
 
 
 def estop():
@@ -475,6 +676,7 @@ def estop():
     try:
         seq["abort"] = True
         send("stop")
+        end_arm_runner()
         end_vla_runner()
         subprocess.run(DEXEC + ["pkill", "-INT", "-f", ESTOP_PROCS], capture_output=True)
         for _ in range(30):            # up to 3 s for a clean exit (scripts hold their pose)
@@ -677,7 +879,10 @@ ACTION_PARAMS = {
     "path.run_all": {},
     "route.run": {"route": list(ROUTES)},
     "arm.pose": {"pose": list(ARM_TIME)},
-    "vla.grasp": {},
+    "arm.down": {"hand": ["left", "right"], "cm": "number from 0.5 to 15"},
+    "vla.grasp": {"model": "optional registered model id (default: selected model)",
+                  "seconds": "optional number from 1 to 120 (default: model seconds)",
+                  "stop_on_grasp": "optional boolean (default: false)"},
     "odom.reset": {},
     "mission.run": {"attempts": "optional integer", "prompt": "optional string", "port": "optional integer",
                     "rtc": "optional boolean (default: the selected model's mode)"},
@@ -691,7 +896,23 @@ def start_action(body):
     if not isinstance(kind, str) or kind not in ACTION_PARAMS or not isinstance(params, dict):
         raise APIError(400, "BAD_REQUEST", "unknown type or invalid params")
     spec = ACTION_PARAMS[kind]
-    if kind == "mission.run":
+    generation = estop_generation[0]
+    monitor = None
+    if kind == "arm.down":
+        if (set(params) != {"hand", "cm"} or params["hand"] not in ("left", "right")
+                or type(params["cm"]) not in (int, float) or not .5 <= params["cm"] <= 15):
+            raise APIError(400, "BAD_REQUEST", "arm.down requires hand left/right and cm from 0.5 to 15")
+    elif kind == "vla.grasp":
+        if set(params) - set(spec):
+            raise APIError(400, "BAD_REQUEST", "vla.grasp parameters: model, seconds, stop_on_grasp")
+        model_id = resolve_model(params.get("model", state["vla_selected"]))
+        seconds = params.get("seconds", VLA_MODELS[model_id]["seconds"])
+        if type(seconds) not in (int, float) or not 1 <= seconds <= 120:
+            raise APIError(400, "BAD_REQUEST", "seconds must be a number from 1 to 120")
+        if type(params.get("stop_on_grasp", False)) is not bool:
+            raise APIError(400, "BAD_REQUEST", "stop_on_grasp must be true or false")
+        params = {"model": model_id, "seconds": seconds, "stop_on_grasp": params.get("stop_on_grasp", False)}
+    elif kind == "mission.run":
         merged = dict(params)
         sel = VLA_MODELS[state["vla_selected"]]
         if "prompt" not in merged and "PROMPT" not in os.environ:
@@ -734,9 +955,11 @@ def start_action(body):
         except mission_module.MissionFailure as exc:
             raise APIError(409, "MISSION_PREFLIGHT_FAILED", str(exc)) from exc
     if kind == "vla.grasp":
-        check_policy()
+        check_policy(model_id=params["model"])
+        if params["stop_on_grasp"]:
+            monitor = gripper_monitor.get()
     # E-STOP bypasses seq_lock and may arrive during the policy check.
-    if state["estop"] or (kind == "mission.run" and mission.cancel.is_set()):
+    if state["estop"] or (kind == "vla.grasp" and generation != estop_generation[0]) or (kind == "mission.run" and mission.cancel.is_set()):
         if kind == "mission.run" and mission.monitor:
             mission.monitor.close()
         raise APIError(409, "ESTOP_ACTIVE", "emergency stop is in progress")
@@ -754,8 +977,10 @@ def start_action(body):
             start_sequence(names, params.get("route"), action)
         elif kind == "arm.pose":
             start_arm(params["pose"], action)
+        elif kind == "arm.down":
+            start_arm("down", action, (params["hand"], params["cm"]))
         elif kind == "vla.grasp":
-            start_vla(action)
+            start_vla(action, params["model"], monitor)
         else:
             cmd, arg = ("step", params["direction"]) if kind == "chassis.step" else (
                 ("path_cmd", params["name"]) if kind == "path.run" else ("reset_pose", None))
@@ -1189,6 +1414,18 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(error.status, {"error": {"code": error.code, "message": error.message}})
 
     def api_GET(self, path, query):
+        # Monitor startup/service inspection must not block STOP or action polling.
+        if path == "/api/v1/grippers":
+            return self._send(200, gripper_monitor.readings())
+        if path == "/api/v1/preflight":
+            model_id = parse_qs(query, keep_blank_values=True).get("model", [state["vla_selected"]])[0]
+            return self._send(200, api_preflight(model_id))
+        if path == "/api/v1/models":
+            services = model_services()
+            with seq_lock:
+                selected = state["vla_selected"]
+            return self._send(200, {"models": [{**m, "selected": m["id"] == selected} for m in services],
+                                    "selected": selected})
         with seq_lock:
             if path == "/api/v1/health":
                 action = current_action[0]
@@ -1251,6 +1488,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.api_GET(unquote(path), query)
             except APIError as e:
                 return self.api_error(e)
+            except Exception as e:
+                note(f"API request error: {e}")
+                return self.api_error(APIError(500, "INTERNAL_ERROR", str(e)))
         if path == "/":
             self._send(200, PAGE, "text/html")
         elif path in ("/models", "/models/"):
@@ -1435,6 +1675,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"ok": True})
         elif parts[0] == "estop":
             already_stopping = state["estop"]
+            estop_generation[0] += 1
             state["estop"] = True
             seq["abort"] = True
             mission.abort()
@@ -1451,11 +1692,11 @@ class Handler(BaseHTTPRequestHandler):
                     seq["abort"] = True
                     ok = send("stop")
                 if state["arm"]:
+                    end_arm_runner()
                     subprocess.run(ARM_STOP, capture_output=True)
                     note("STOP: arm script interrupted")
                 if state["vla"]:
-                    end_vla_runner()
-                    subprocess.run(DEXEC + ["pkill", "-INT", "-f", ESTOP_PROCS], capture_output=True)
+                    stop_vla_motion()
                     note("STOP: VLA interrupted (arms hold where they are)")
             else:
                 ok = send(parts[0])

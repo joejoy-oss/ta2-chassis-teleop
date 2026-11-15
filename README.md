@@ -162,6 +162,7 @@ stood during data collection.
 网页最上方「开始全流程」和 API `mission.run` 共用 `mission.py`、序列锁及急停。
 页面显示当前步骤、抓取次数、抓取手、到达停留倒计时和结果。运行及中止清理期间仅接受急停；
 软停、cancel 和所有其他 POST 均拒绝（`MISSION_ESTOP_ONLY`）。接口和客户端示例见 [docs/API.md](docs/API.md)。
+`/api/v1` 还支持单手任意下降 `arm.down`、单次模型/时长及抓住即停的 `vla.grasp`，以及只读夹爪、预检、模型列表；`ta2_client.py` 提供对应方法。
 
 预检确认底盘连接/API 模式、策略容器、四段路线、双臂反馈新鲜、当前双爪都未夹持后，执行：
 

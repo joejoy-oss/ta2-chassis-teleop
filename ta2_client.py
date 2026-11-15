@@ -69,6 +69,16 @@ class TA2Client:
     def capabilities(self):
         return self._request("GET", "/capabilities")
 
+    def grippers(self):
+        return self._request("GET", "/grippers")
+
+    def preflight(self, model=None):
+        query = "?" + urlencode({"model": model}) if model is not None else ""
+        return self._request("GET", "/preflight" + query)
+
+    def models(self):
+        return self._request("GET", "/models")
+
     def actions(self, limit=20):
         return self._request("GET", "/actions?" + urlencode({"limit": limit}))["actions"]
 
@@ -115,8 +125,14 @@ class TA2Client:
     def arm_pose(self, pose, wait=False, timeout=300, poll=0.5, raise_on_fail=False):
         return self._run("arm.pose", {"pose": pose}, wait, timeout, poll, raise_on_fail)
 
-    def vla_grasp(self, wait=False, timeout=300, poll=0.5, raise_on_fail=False):
-        return self._run("vla.grasp", {}, wait, timeout, poll, raise_on_fail)
+    def arm_down(self, hand, cm, wait=False, timeout=300, poll=0.5, raise_on_fail=False):
+        return self._run("arm.down", {"hand": hand, "cm": cm}, wait, timeout, poll, raise_on_fail)
+
+    def vla_grasp(self, model=None, seconds=None, stop_on_grasp=False, wait=False,
+                  timeout=300, poll=0.5, raise_on_fail=False):
+        params = {k: v for k, v in (("model", model), ("seconds", seconds)) if v is not None}
+        params["stop_on_grasp"] = stop_on_grasp
+        return self._run("vla.grasp", params, wait, timeout, poll, raise_on_fail)
 
     def run_mission(self, attempts=None, prompt=None, port=None, wait=False, timeout=1800,
                     poll=0.5, raise_on_fail=False):

@@ -32,8 +32,16 @@ def event(kind, argv):
 def main():
     kind, args = sys.argv[1], sys.argv[2:]
     if kind == "dex":
+        event("dex", args)
+        if SCENARIO.startswith("api_") and args[0] == "pkill" and "grasp_monitor.py" in args[-1]:
+            for pidfile in ROOT.glob("monitor-*.pid"):
+                try:
+                    os.kill(int(pidfile.read_text()), signal.SIGINT)
+                except ProcessLookupError:
+                    pass
         sys.exit(1 if args[0] == "pgrep" else 0)
     if kind == "monitor":
+        (ROOT / f"monitor-{os.getpid()}.pid").write_text(str(os.getpid()))
         signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
         while True:
             if (ROOT / "monitor_exit").exists():
@@ -47,9 +55,9 @@ def main():
             frame = {"t": now, "fsm": 2, "arms_fresh": fresh}
             for side in ("left", "right"):
                 frame[side] = {"grip_pos": 1.05, "grip_eff": 0.2, "ee_z": -0.30, "fresh": fresh}
-            side = "right" if SCENARIO == "success_right" else "left"
+            side = "right" if SCENARIO in ("success_right", "api_success_right") else "left"
             success_at = 3 if SCENARIO == "success_left" else 1
-            loaded = (st["attempt"] >= success_at and SCENARIO != "all_fail" and
+            loaded = (st["attempt"] >= success_at and SCENARIO not in ("all_fail", "api_no_grasp") and
                       st["stage"] not in ("idle", "start", "open_left", "open_right"))
             if loaded and now - st.get("began", now) > 0.10:
                 frame[side].update(grip_pos=0.39, grip_eff=-2.5,
@@ -66,6 +74,16 @@ def main():
         if kind == "vla":
             st.update(attempt=st["attempt"] + 1, stage="vla", began=time.monotonic())
             write(st)
+            if SCENARIO.startswith("api_"):
+                def api_interrupted(*_):
+                    event("vla_interrupted", [])
+                    print(json.dumps({"status": "stopped", "actuations": 8, "error": "interrupted"}), flush=True)
+                    sys.exit(130)
+                signal.signal(signal.SIGTERM, api_interrupted)
+                signal.signal(signal.SIGINT, api_interrupted)
+                time.sleep(float(args[1]))
+                print(json.dumps({"status": "time_limit", "actuations": 12, "error": None}), flush=True)
+                return
             event("vla_env", [os.environ["PROMPT"], os.environ["PORT"], os.environ["RESET"]])
             success_at = 3 if SCENARIO == "success_left" else 1
             if SCENARIO == "all_fail" or st["attempt"] < success_at:
@@ -83,6 +101,10 @@ def main():
             if SCENARIO == "arm_fail" and args[0] == "start_hold":
                 sys.exit(4)
         elif kind == "down":
+            while (ROOT / "down_hold").exists():
+                time.sleep(.02)
+            for i in range(10):
+                print(f"descent output {i}", flush=True)
             time.sleep(0.1)
             if SCENARIO == "down_fail":
                 sys.exit(6)
