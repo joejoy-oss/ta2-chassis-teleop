@@ -1,6 +1,32 @@
 {
-  "default": "grasp_v3_step5000",
+  "default": "grasp_v3_step10000",
   "models": [
+    {
+      "id": "grasp_v3_step10000",
+      "name": "最新模型 v3 · 10000 步",
+      "training": "122 段演示 · 11 月 15 日",
+      "prompt": "抓取红色沙包",
+      "port": 8003,
+      "container": "grasp-v3-step10000-policy",
+      "command": [
+        "/root/vla_grasp_v3_step10000.sh"
+      ],
+      "seconds": 60,
+      "speed": 0.5
+    },
+    {
+      "id": "grasp_v3_step10000_rtc",
+      "name": "最新模型 v3 · 10000 步 · RTC 流畅模式",
+      "training": "122 段演示 · 11 月 15 日",
+      "prompt": "抓取红色沙包",
+      "port": 8003,
+      "container": "grasp-v3-step10000-policy",
+      "command": [
+        "/root/vla_grasp_v3_step10000_rtc.sh"
+      ],
+      "seconds": 60,
+      "speed": 0.5
+    },
     {
       "id": "grasp_v3_step5000",
       "name": "新模型 v3 · 5000 步",
@@ -8,7 +34,22 @@
       "prompt": "抓取红色沙包",
       "port": 8002,
       "container": "grasp-v3-step5000-policy",
-      "command": ["/root/vla_grasp_v3_step5000.sh"],
+      "command": [
+        "/root/vla_grasp_v3_step5000.sh"
+      ],
+      "seconds": 60,
+      "speed": 0.5
+    },
+    {
+      "id": "grasp_v3_step5000_rtc",
+      "name": "新模型 v3 · 5000 步 · RTC 流畅模式",
+      "training": "122 段演示 · 11 月 15 日",
+      "prompt": "抓取红色沙包",
+      "port": 8002,
+      "container": "grasp-v3-step5000-policy",
+      "command": [
+        "/root/vla_grasp_v3_step5000_rtc.sh"
+      ],
       "seconds": 60,
       "speed": 0.5
     },
@@ -19,7 +60,22 @@
       "prompt": "抓取沙包",
       "port": 8000,
       "container": "sandbag-step4999-policy",
-      "command": ["/root/vla_grasp_v2_step4999.sh"],
+      "command": [
+        "/root/vla_grasp_v2_step4999.sh"
+      ],
+      "seconds": 60,
+      "speed": 0.5
+    },
+    {
+      "id": "sandbag_v2_step4999_rtc",
+      "name": "上午模型 v2 · 5000 步（检查点 4999） · RTC 流畅模式",
+      "training": "36 段演示 · 11 月 14 日",
+      "prompt": "抓取沙包",
+      "port": 8000,
+      "container": "sandbag-step4999-policy",
+      "command": [
+        "/root/vla_grasp_v2_step4999_rtc.sh"
+      ],
       "seconds": 60,
       "speed": 0.5
     }

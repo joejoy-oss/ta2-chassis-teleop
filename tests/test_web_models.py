@@ -20,7 +20,7 @@ class ModelSelectionTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.selection = str(Path(self.temp.name) / "selected.json")
         self.web = self.load_module()
-        self.web.state.update(moving=None, arm=None, vla=None, vla_model=None, estop=False)
+        self.web.state.update(moving=None, arm=None, vla=None, vla_model=None, estop=False, vla_selected=NEW)
         self.web.seq.update(names=[], route=None)
         self.subprocess = patch.object(self.web.subprocess, "run", return_value=SimpleNamespace(stdout="true\n"))
         self.check = self.subprocess.start()
@@ -70,7 +70,7 @@ class ModelSelectionTests(unittest.TestCase):
         self.check.assert_not_called()
 
     def test_selected_models_bind_correct_service_and_worker(self):
-        for model_id in (NEW, OLD):
+        for model_id in self.web.VLA_MODELS:
             with self.subTest(model=model_id):
                 self.web.state.update(vla=None, vla_model=None)
                 self.web.select_model(model_id)
@@ -83,7 +83,7 @@ class ModelSelectionTests(unittest.TestCase):
                 self.assertEqual(self.web.state["vla_model"], model_id)
 
     def test_worker_uses_bound_profile_and_reports_model(self):
-        for model_id in (NEW, OLD):
+        for model_id in self.web.VLA_MODELS:
             with self.subTest(model=model_id):
                 model = self.web.VLA_MODELS[model_id]
                 fake = MagicMock()
@@ -111,7 +111,9 @@ class ModelSelectionTests(unittest.TestCase):
         status, result = self.request("/api/models", "GET")
         self.assertEqual(status, 200)
         self.assertEqual(result["selected"], OLD)
-        self.assertEqual([model["running"] for model in result["models"]], [True, False])
+        # each model is listed twice (plain and RTC variant); both share the same policy container
+        self.assertEqual({model["id"]: model["running"] for model in result["models"]},
+                         {key: value["container"] == "grasp-v3-step5000-policy" for key, value in self.web.VLA_MODELS.items()})
         status, result = self.request("/status", "GET")
         self.assertEqual(result["vla_selection"]["id"], OLD)
         self.assertIsNone(result["vla_running"])
@@ -124,7 +126,7 @@ class ModelSelectionTests(unittest.TestCase):
     def test_invalid_saved_selection_falls_back_to_default(self):
         for value in ("removed_model", [], None):
             Path(self.selection).write_text(json.dumps({"model": value}))
-            self.assertEqual(self.load_module().state["vla_selected"], NEW)
+            self.assertEqual(self.load_module().state["vla_selected"], self.web.DEFAULT_MODEL)
 
 
 if __name__ == "__main__":

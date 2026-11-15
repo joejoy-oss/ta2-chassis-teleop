@@ -210,3 +210,16 @@ python3 -m unittest discover -s tests -p 'test_*.py' -v
 端到端用真实 teleop.py + tests/fakeros 驱动缩短的测试 CSV，假 VLA/手臂/下降及场景 JSON 监视器；
 真实 001–004 CSV 未修改。覆盖左/右成功、五次失败、途中掉落、急停、POST 门控、预检拒绝、
 反馈断流、脚本失败及原 API/手臂按钮回归。无需 ROS、Docker 或 MuJoCo；MuJoCo 数值与实物验证留给 B70。
+
+
+## v3 checkpoint 10000 deployment (2026-11-15)
+
+The newest registered model is v3 step 10000, trained on the same 122 demonstrations.
+`vla/vla_grasp_v3_step10000.sh` pins `grasp-v3-step10000-policy` on localhost port 8003,
+prompt 抓取红色沙包, default 60 s and max 0.5 rad/s. The matching `_rtc.sh` runner uses
+`RTC=1` with the existing shared runner. Both entries appear in `/models`; older deployed
+models remain available. Checkpoint 8000 is downloaded only and is not registered or served.
+
+B70 JAX weights: `/data/ta2/model_exports/grasp_v3_step10000`.
+Converted weights: `/data/ta2/model_exports/grasp_v3_step10000_pytorch`.
+Deployment and offline smoke evidence: `/data/ta2/model_exports/grasp_v3_eval/step10000_deployment`.
