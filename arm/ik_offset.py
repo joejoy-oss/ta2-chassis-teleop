@@ -9,8 +9,7 @@ import argparse, json, sys
 import numpy as np, mujoco
 
 MODEL = "/workspace/assets/official_mujoco_20260804/mujoco/robot.xml"
-Z_MIN = -0.40          # m, robot frame: lowest EE height allowed on descent (training data reached -0.397)
-Z_CLEAR = -0.27        # m, robot frame: tabletop clearance cap on vertical lift (~12 cm above -0.39 m tabletop)
+Z_MIN = -0.40          # m, robot frame: lowest EE height allowed (training data reached -0.397)
 ap = argparse.ArgumentParser()
 ap.add_argument("--arm", choices=("left", "right"), default="right"); ap.add_argument("--fit"); ap.add_argument("--now"); ap.add_argument("--out")
 ap.add_argument("--dx", type=float, default=0.0); ap.add_argument("--dy", type=float, default=0.0); ap.add_argument("--dz", type=float, default=0.0)
@@ -72,18 +71,11 @@ p0, R0 = fk(q0); tool0 = p0 + R0 @ t
 if np.linalg.norm(Ra @ tool0 + c - ee0) > 0.01:
     print(f"model and robot disagree by {np.linalg.norm(Ra @ tool0 + c - ee0) * 1000:.1f} mm: refusing"); sys.exit(2)
 delta_robot = np.array([a.dx, a.dy, a.dz])
-if a.dz < 0 and (ee0 + delta_robot)[2] < Z_MIN:    # go only as far down as the height limit
+if (ee0 + delta_robot)[2] < Z_MIN:                 # go only as far as the height limit
     if ee0[2] - Z_MIN < 0.002:
         print(f"already at the height limit (EE z {ee0[2]:.3f} m, limit {Z_MIN} m): nothing to do"); sys.exit(2)
     print(f"height limit: asked for EE z {(ee0 + delta_robot)[2]:.3f} m, going only to {Z_MIN} m")
     delta_robot[2] = Z_MIN - ee0[2]
-if a.dz > 0 and (ee0 + delta_robot)[2] > Z_CLEAR:  # cap lift at safe clearance height within elbow limits
-    if Z_CLEAR - ee0[2] < 0.005:
-        print(f"already above clearance height (EE z {ee0[2]:.3f} m >= {Z_CLEAR} m): holding pose")
-        json.dump({a.arm: q0.tolist(), f"{a.arm}_now": q0.tolist(), "delta_m": [0.0, 0.0, 0.0], "expected_ee": ee0.tolist()}, open(a.out, "w"))
-        sys.exit(0)
-    print(f"clearance cap: asked for EE z {(ee0 + delta_robot)[2]:.3f} m, lifting to {Z_CLEAR} m")
-    delta_robot[2] = Z_CLEAR - ee0[2]
 target = tool0 + Ra.T @ delta_robot
 q = q0.copy(); jp = np.zeros((3, m.nv)); jr = np.zeros((3, m.nv))
 for _ in range(300):
@@ -103,10 +95,9 @@ for s in np.linspace(0, 1, 41):
     pp, RR = fk(q0 + s * (q - q0)); tt = pp + RR @ t; v = tt - tool0
     heights.append(float((Ra @ tt + c)[2]))
     prog.append(float(v @ step_dir)); dev.append(float(np.linalg.norm(v - (v @ step_dir) * step_dir)) * 1000)
-max_dev = max(5.0, float(np.linalg.norm(delta_robot)) * 150.0)
-z_floor = (min(Z_MIN, float(ee0[2])) if a.dz > 0 else Z_MIN) - 1e-3
-if min(heights) < z_floor or max(dev) > max_dev or not all(np.diff(prog) >= -5e-5):
-    print(f"path check failed (min_z {min(heights):.4f}/{z_floor:.4f} m, sideways {max(dev):.1f}/{max_dev:.1f} mm, monotonic {all(np.diff(prog) >= -5e-5)}): refusing"); sys.exit(2)
+max_dev = max(5.0, float(np.linalg.norm(delta_robot)) * 80.0)
+if min(heights) < Z_MIN - 1e-3 or max(dev) > max_dev or not all(np.diff(prog) >= -5e-5):
+    print(f"path check failed (min_z {min(heights):.4f} m, sideways {max(dev):.1f}/{max_dev:.1f} mm, monotonic {all(np.diff(prog) >= -5e-5)}): refusing"); sys.exit(2)
 exp = (Ra @ tool + c).tolist()
 json.dump({a.arm: q.tolist(), f"{a.arm}_now": q0.tolist(), "delta_m": delta_robot.tolist(), "expected_ee": exp},
           open(a.out, "w"))

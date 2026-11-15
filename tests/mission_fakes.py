@@ -51,10 +51,9 @@ def main():
             success_at = 3 if SCENARIO == "success_left" else 1
             loaded = (st["attempt"] >= success_at and SCENARIO != "all_fail" and
                       st["stage"] not in ("idle", "start", "open_left", "open_right"))
-            if SCENARIO == "slip_once" and st["attempt"] == 1 and st["stage"] == "up":
-                loaded = False
             if loaded and now - st.get("began", now) > 0.10:
-                frame[side].update(grip_pos=0.39, grip_eff=-2.5, ee_z=-0.39)
+                frame[side].update(grip_pos=0.39, grip_eff=-2.5,
+                                   ee_z=-0.30 if now - st["began"] < 0.30 else -0.23)
             if SCENARIO == "occupied":
                 frame["right"].update(grip_pos=0.4, grip_eff=-2.0)
             if (ROOT / "drop").exists():
@@ -83,12 +82,6 @@ def main():
             time.sleep(0.15)
             if SCENARIO == "arm_fail" and args[0] == "start_hold":
                 sys.exit(4)
-        elif kind == "up":
-            st["stage"] = "up"
-            write(st)
-            time.sleep(0.1)
-            if SCENARIO == "up_fail":
-                sys.exit(5)
         elif kind == "down":
             time.sleep(0.1)
             if SCENARIO == "down_fail":

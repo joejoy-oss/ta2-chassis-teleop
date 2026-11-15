@@ -17,15 +17,12 @@ ATTEMPT_S = float(os.environ.get("ATTEMPT_S", "45"))
 PROMPT = os.environ.get("PROMPT", "抓取沙包")
 PORT = int(os.environ.get("MISSION_PORT", os.environ.get("POLICY_PORT", "8000")))
 ARRIVE_PAUSE = float(os.environ.get("ARRIVE_PAUSE", "10"))
-LIFT_CM = float(os.environ.get("LIFT_CM", "8"))
 PLACE_CM = float(os.environ.get("PLACE_CM", "10"))
 HOLD_POS_MIN = float(os.environ.get("HOLD_POS_MIN", "0.06"))  # calibrated: empty-closed is -0.047 (R) / -0.059 (L) rad
 HOLD_POS_MAX = float(os.environ.get("HOLD_POS_MAX", "0.75"))
 HOLD_EFF_MAX = float(os.environ.get("HOLD_EFF_MAX", "-1.0"))
-HOLD_PERSIST = float(os.environ.get("HOLD_PERSIST", "0.6"))
-HOLD_SPAN_MAX = float(os.environ.get("HOLD_SPAN_MAX", "0.15"))
-OVERLOAD_EFF = float(os.environ.get("OVERLOAD_EFF", "19.0"))
-OVERLOAD_PERSIST = float(os.environ.get("OVERLOAD_PERSIST", "1.0"))
+LIFT_MIN = float(os.environ.get("LIFT_MIN", "0.04"))
+HOLD_PERSIST = float(os.environ.get("HOLD_PERSIST", "1.5"))
 DROP_PERSIST = float(os.environ.get("DROP_PERSIST", "0.25"))
 MISSION_LOG_DIR = os.environ.get("MISSION_LOG_DIR", "/root/ta2_mission")
 MONITOR_TIMEOUT = float(os.environ.get("MONITOR_TIMEOUT", "0.6"))
@@ -44,45 +41,34 @@ def holding(sample):
 
 
 def grasp_update(previous, sample, t):
-    """Pure state transition: settled loaded grip on tabletop before vertical lift takeover.
+    """Pure state transition: close height + uninterrupted loaded, lifted hold.
 
-    Requires uninterrupted fresh holding(sample) whose gripper position stays within
-    HOLD_SPAN_MAX for HOLD_PERSIST seconds, stopping VLA before tabletop dragging starts.
+    A fresh detector is used for each attempt. The first close height remains
+    fixed; opening/invalid/stale/gapped samples break the persistence interval.
     """
-    prev = previous or {}
-    window = list(prev.get("window") or ())
-    last_t = prev.get("last_t")
-    out = {"window": [], "since": None, "last_t": last_t, "success": False}
-    if not finite(t) or (last_t is not None and t <= last_t):
+    out = dict(previous or {"z_at_close": None, "since": None, "last_t": None})
+    out["success"] = False
+    if not finite(t) or (out["last_t"] is not None and t <= out["last_t"]):
+        out["since"] = None
         return out
-    gap = last_t is not None and t - last_t > MONITOR_TIMEOUT
+    gap = out["last_t"] is not None and t - out["last_t"] > MONITOR_TIMEOUT
     out["last_t"] = t
     pos, z = sample.get("grip_pos"), sample.get("ee_z")
-    if gap or sample.get("fresh") is not True or not finite(z) or not holding(sample):
+    if sample.get("fresh") is not True or not finite(pos) or not finite(z):
+        out["since"] = None
         return out
-    window.append((float(t), float(pos)))
-    while len(window) > 1 and max(p for _, p in window) - min(p for _, p in window) > HOLD_SPAN_MAX:
-        window.pop(0)
-    out["window"] = window
-    out["since"] = window[0][0]
-    out["success"] = (t - window[0][0]) >= HOLD_PERSIST
-    return out
-
-
-def overload_update(previous, sample, t):
-    """Pure state transition: sustained high arm joint torque (table-drag / stall guard)."""
-    prev = previous or {}
-    last_t, since = prev.get("last_t"), prev.get("since")
-    out = {"since": None, "last_t": last_t, "overloaded": False}
-    if not finite(t) or (last_t is not None and t <= last_t):
+    if pos > HOLD_POS_MAX:
+        out["since"] = None
         return out
-    gap = last_t is not None and t - last_t > MONITOR_TIMEOUT
-    out["last_t"] = t
-    eff = sample.get("arm_max_eff")
-    if gap or sample.get("fresh") is not True or not finite(eff) or eff < OVERLOAD_EFF:
-        return out
-    out["since"] = float(t) if since is None else float(since)
-    out["overloaded"] = (t - out["since"]) >= OVERLOAD_PERSIST
+    if out["z_at_close"] is None:
+        out["z_at_close"] = z
+    good = holding(sample) and z >= out["z_at_close"] + LIFT_MIN
+    if not good or gap:
+        out["since"] = None
+    if good:
+        if out["since"] is None:
+            out["since"] = t
+        out["success"] = t - out["since"] >= HOLD_PERSIST
     return out
 
 
@@ -186,9 +172,7 @@ class Mission:
         self.watching = False
         self.carrying = False
         self.detectors = {}
-        self.overloads = {}
         self.success_hand = None
-        self.overload_side = None
         self.command = None
         self.logfile = None
         self.active_step = None
@@ -227,9 +211,6 @@ class Mission:
                 self.detectors[side] = grasp_update(self.detectors.get(side), frame[side], frame["t"])
                 if self.detectors[side]["success"] and self.success_hand is None:
                     self.success_hand = side
-                self.overloads[side] = overload_update(self.overloads.get(side), frame[side], frame["t"])
-                if self.overloads[side]["overloaded"] and self.overload_side is None:
-                    self.overload_side = side
         if self.carrying:
             if holding(frame[self.state["hand"]]):
                 self.drop_since = None
@@ -367,7 +348,7 @@ class Mission:
     def _stop_command(self, kind):
         # Killing docker-exec locally does not stop its container-side process.
         pattern = "guarded_grasp.py" if kind == "vla" else "arm_pose.py"
-        override = {"vla": "VLA_CMD", "down": "ARM_DOWN_CMD", "up": "ARM_UP_CMD", "arm": "ARM_CMD"}[kind]
+        override = {"vla": "VLA_CMD", "down": "ARM_DOWN_CMD", "arm": "ARM_CMD"}[kind]
         if not os.environ.get(override):
             subprocess.run(self.h.DEXEC + ["pkill", "-INT", "-f", pattern],
                            capture_output=True, timeout=5)
@@ -403,24 +384,18 @@ class Mission:
                 self._check()
                 rc = self.command.poll()
                 if rc is not None:
-                    return rc, None, None
+                    return rc, None
                 if attempt and self.success_hand:
                     hand = self.success_hand
                     self.detecting = False
                     self._stop_command("vla")
-                    return self.command.returncode, hand, None
-                if attempt and self.overload_side:
-                    side = self.overload_side
-                    self.detecting = False
-                    self._stop_command("vla")
-                    self.h.note(f"mission: {side} arm torque overload stopped VLA")
-                    return self.command.returncode, None, f"overload_{side}"
+                    return self.command.returncode, hand
                 if self.carrying and self.dropped:
                     raise MissionFailure("object dropped")
                 if time.monotonic() >= deadline:
                     self._stop_command(kind)
                     if attempt:
-                        return None, None, "timeout"
+                        return None, None
                     raise MissionFailure("script timeout")
                 self.cancel.wait(0.02)
         finally:
@@ -430,7 +405,7 @@ class Mission:
             self.command = None
 
     def _arm(self, action):
-        rc, _, _ = self._execute(self.h.ARM_CMD + [action])
+        rc, _ = self._execute(self.h.ARM_CMD + [action])
         if rc != 0:
             raise MissionFailure(f"arm {action} exited {rc}")
 
@@ -450,32 +425,17 @@ class Mission:
                 self.state["attempt"] = i
                 self.detecting = False
                 self._new_monitor()
-                self.detectors, self.overloads = {}, {}
-                self.success_hand, self.overload_side = None, None
+                self.detectors, self.success_hand = {}, None
                 self.detecting = True
                 tag = f"mission_{self.state['id']}_{i}"
                 entry = {"attempt": i, "tag": tag, "result": "running", "hand": None}
                 self.state["attempt_results"].append(entry)
                 self._event("attempt_start", **entry)
                 try:
-                    rc, hand, why = self._execute(
-                        self.h.VLA_CMD + [tag, str(ATTEMPT_S), "0.5"],
-                        kind="vla", attempt=True,
-                        env={**os.environ, "PROMPT": cfg["prompt"], "PORT": str(cfg["port"]), "RESET": "1", "TAKEOVER": "0"})
-                    if hand:
-                        self.cancel.wait(0.25)
-                        self._check()
-                        rc_up, _, _ = self._execute(self.h.ARM_UP_CMD + [hand, f"{LIFT_CM:g}"], kind="up")
-                        if rc_up != 0:
-                            raise MissionFailure(f"arm_up exited {rc_up}")
-                        self.cancel.wait(0.20)
-                        self._check()
-                        if not holding(self.monitor.frame[hand]):
-                            self.h.note(f"mission attempt {i}: {hand} lost hold after {LIFT_CM:g} cm lift; retrying")
-                            hand, why = None, "slipped_on_lift"
+                    rc, hand = self._execute(self.h.VLA_CMD + [tag, str(ATTEMPT_S), "0.5"],
+                                             kind="vla", attempt=True,
+                                             env={**os.environ, "PROMPT": cfg["prompt"], "PORT": str(cfg["port"]), "RESET": "1"})
                     entry.update(result="succeeded" if hand else "failed", hand=hand, returncode=rc)
-                    if why:
-                        entry["reason"] = why
                 except Exception:
                     entry.update(result="aborted" if self.cancel.is_set() else "failed")
                     raise
@@ -499,7 +459,7 @@ class Mission:
             self._route("r2g")
             self._pause()
             self._step("place")
-            rc, _, _ = self._execute(self.h.ARM_DOWN_CMD + [self.state["hand"], f"{PLACE_CM:g}"], kind="down")
+            rc, _ = self._execute(self.h.ARM_DOWN_CMD + [self.state["hand"], f"{PLACE_CM:g}"], kind="down")
             if rc != 0:
                 raise MissionFailure(f"arm_down exited {rc}")
             self._check()

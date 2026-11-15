@@ -11,7 +11,7 @@ SIDES = ("left", "right")
 class Feedback:
     """Track each topic separately: fresh joints cannot mask a stale gripper or EE."""
     def __init__(self):
-        self.values = {s: {"grip_pos": None, "grip_eff": None, "ee_z": None, "arm_max_eff": None} for s in SIDES}
+        self.values = {s: {"grip_pos": None, "grip_eff": None, "ee_z": None} for s in SIDES}
         self.times = {s: {} for s in SIDES}
         self.fsm = None
 
@@ -28,9 +28,6 @@ class Feedback:
     def joints(self, side, msg, now):
         if len(msg.position) >= 7 and all(math.isfinite(v) for v in msg.position[:7]):
             self.times[side]["joints"] = now
-            eff = getattr(msg, "effort", None)
-            if eff and len(eff) >= 7 and all(math.isfinite(v) for v in eff[:7]):
-                self.values[side]["arm_max_eff"] = float(max(abs(v) for v in eff[:7]))
 
     def snapshot(self, now):
         out = {"t": now, "fsm": self.fsm}

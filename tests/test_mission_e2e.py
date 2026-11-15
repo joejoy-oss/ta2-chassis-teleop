@@ -37,8 +37,7 @@ class _MissionServer:
                "MISSION_SCENARIO": self.scenario, "PYTHONPATH": str(ROOT / "tests/fakeros"),
                "TELEOP_CMD": shlex.join([sys.executable, "-u", str(ROOT / "teleop.py")]),
                "VLA_CMD": shlex.join(fake + ["vla"]), "ARM_CMD": shlex.join(fake + ["arm"]),
-               "ARM_UP_CMD": shlex.join(fake + ["up"]), "ARM_DOWN_CMD": shlex.join(fake + ["down"]),
-               "MONITOR_CMD": shlex.join(fake + ["monitor"]),
+               "ARM_DOWN_CMD": shlex.join(fake + ["down"]), "MONITOR_CMD": shlex.join(fake + ["monitor"]),
                "ESTOP_DEXEC": shlex.join(fake + ["dex"]), "ARM_STOP": shlex.join(fake + ["dex", "pkill"]),
                "PATH_DIR": str(paths), "TRAIL_DIR": str(self.dir / "trails"),
                "MISSION_LOG_DIR": str(self.dir / "missions"), "ACTION_LOG": str(self.dir / "actions.jsonl"),
@@ -121,7 +120,6 @@ class LeftSuccess(_MissionServer, unittest.TestCase):
         m, records = self.finish(aid, "succeeded")
         self.assertEqual(m["hand"], "left")
         self.assertEqual([r["result"] for r in m["attempt_results"]], ["failed", "failed", "succeeded"])
-        self.assertEqual(self.commands("up"), [["left", "8"]])
         self.assertEqual(self.commands("arm"), [["start_hold"], ["open_left"]])
         self.assertEqual(self.commands("down"), [["left", "10"]])
         self.assertEqual(self.commands("vla_env"), [["测试抓取", "8001", "1"]] * 3)
@@ -207,51 +205,8 @@ class RightSuccess(_MissionServer, unittest.TestCase):
         aid = client.run_mission(attempts=1)
         m, _ = self.finish(aid, "succeeded")
         self.assertEqual(m["hand"], "right")
-        self.assertEqual(self.commands("up"), [["right", "8"]])
         self.assertEqual(self.commands("arm"), [["start_hold"], ["open_right"]])
         self.assertEqual(self.commands("down"), [["right", "10"]])
-
-
-class SlipRetry(_MissionServer, unittest.TestCase):
-    scenario = "slip_once"
-
-    def test_midair_slip_retries_and_succeeds_second_attempt(self):
-        aid = self.start()
-        m, _ = self.finish(aid, "succeeded")
-        self.assertEqual([r["result"] for r in m["attempt_results"]], ["failed", "succeeded"])
-        self.assertEqual(m["attempt_results"][0].get("reason"), "slipped_on_lift")
-        self.assertEqual(self.commands("up"), [["left", "8"], ["left", "8"]])
-        self.assertEqual(self.commands("arm"), [["start_hold"], ["open_left"]])
-
-
-class TakeoverStandaloneTests(unittest.TestCase):
-    def test_standalone_takeover_lifts_verifies_and_stows(self):
-        with tempfile.TemporaryDirectory(prefix="ta2-takeover-") as tmp:
-            d = Path(tmp)
-            out = d / "outputs" / "trial1"
-            out.mkdir(parents=True)
-            (out / "report.json").write_text(json.dumps({"status": "interrupted", "actuations": 142}))
-            fake = [sys.executable, str(ROOT / "tests/mission_fakes.py")]
-            env = {**os.environ, "FAKE_ROOT": str(d), "MISSION_SCENARIO": "success_right",
-                   "OUTPUTS_DIR": str(d / "outputs"),
-                   "PROBE_CMD": shlex.join([sys.executable, "-c", "print('probe ok')"]),
-                   "MONITOR_CMD": shlex.join(fake + ["monitor"]),
-                   "GUARDED_CMD": shlex.join(fake + ["vla"]),
-                   "ARM_UP_CMD": shlex.join(fake + ["up"]),
-                   "ARM_SH_CMD": shlex.join(fake + ["arm"]),
-                   "ESTOP_DEXEC": shlex.join(fake + ["dex"]),
-                   "PROMPT": "抓取沙包", "PORT": "8000", "RESET": "1"}
-            res = subprocess.run([sys.executable, str(ROOT / "vla/vla_takeover.py"), "trial1", "10", "0.5"],
-                                 env=env, capture_output=True, text=True, timeout=15)
-            self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
-            summary = json.loads(res.stdout.strip().splitlines()[-1])
-            self.assertEqual(summary["status"], "succeeded")
-            self.assertEqual(summary["hand"], "right")
-            self.assertEqual(summary["actuations"], 142)
-            cmds = [json.loads(ln) for ln in (d / "commands.jsonl").read_text().splitlines()]
-            self.assertEqual([c["kind"] for c in cmds], ["vla", "vla_env", "vla_interrupted", "up", "arm"])
-            self.assertEqual(cmds[3]["argv"], ["right", "8"])
-            self.assertEqual(cmds[4]["argv"][0], "start_hold")
 
 
 class ScriptFailures(_MissionServer, unittest.TestCase):

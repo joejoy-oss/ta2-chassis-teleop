@@ -51,7 +51,7 @@ TRAIN_START = os.path.join(os.path.dirname(os.path.abspath(__file__)), "train_st
 SAVE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "arm_start_pose.json")
 CMD_RATE = 100.0          # joint_cmd, Hz
 HB_RATE = 20.0            # fsm/enable heartbeat, Hz
-GOTO_MAX_DELTA = 0.80       # rad: goto refuses any single joint change larger than this (8 cm table lift uses up to ~0.71 rad)
+GOTO_MAX_DELTA = 0.65       # rad: goto refuses any single joint change larger than this (10 cm descent uses ~0.44 rad)
 GOTO_START_TOL = 0.05       # rad: if the file records the start it was computed from, the arm must still be there
 HOLD_OPEN_BELOW = 0.9       # gripper position (rad) below this = closed / holding; open is about 1.05
 MAX_SPEED = 0.35          # rad/s peak joint speed
