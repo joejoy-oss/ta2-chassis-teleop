@@ -86,8 +86,8 @@ been checked with a tape measure.
 
 ## Arms (standalone, `arm/`)
 
-Separate from the chassis code. The web remote runs `arm_pose.py` as its own process (Arms panel: Raise arms
-8 s, Lower arms 15 s, Start pose 10 s); `move.sh` never touches the arms.
+Separate from the chassis code. The web remote runs `arm_pose.py` as its own process (Arms panel: Start pose
+10 s, Raise 8 s, Lower 15 s); `move.sh` never touches the arms.
 
 | file | runs where | what |
 |---|---|---|
@@ -101,5 +101,8 @@ If a joint lags its command by > 0.3 rad for 0.5 s (possible contact), or on Ctr
 and pauses the FSM (`/api/fsm/enable` 0.0). Raising moves the arms forward and up: clear the space in front.
 
 Before VLA inference run `start`: the policy only saw arms low and forward over the table at the start of
-an episode; starting from the raised pose gives off-distribution first actions. Gripper and base position are
-not set by it (put the base where it stood during data collection).
+an episode; starting from the raised pose gives off-distribution first actions. `start` also commands both grippers
+open (`/api/{arm}_gripper/cmd` 0.0 = full opening force, sent with every joint command during the move): in
+136 of 137 training episodes (sandbag_trial_20261114_v1, grasp_red_sandbag) the gripper starts fully open
+(~1.05 rad, the dataset maximum) with trigger 0.0. The base position is not set by it: put the base where it
+stood during data collection.

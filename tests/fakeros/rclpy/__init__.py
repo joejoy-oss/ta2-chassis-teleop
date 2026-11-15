@@ -38,6 +38,7 @@ class Arms:
     def __init__(s):
         s.q={"left":[-0.05,1.57,0.13,0.25,-0.23,-0.02,-0.06],"right":[0.13,-1.55,-0.08,-0.28,-0.04,-0.02,0.11]}
         s.q0={k:list(v) for k,v in s.q.items()}
+        s.g={"left":0.6,"right":0.6}; s.gcmd={"left":None,"right":None}   # gripper motor angle, 1.05 = open
         s.target={k:list(v) for k,v in s.q.items()}; s.fsm=0; s.hb=-1e9; s.ss=None; s.last=time.monotonic(); s.pauses=0
     def cmd(s, topic, m):
         if topic=="/api/fsm/enable":
@@ -50,6 +51,8 @@ class Arms:
             arm=topic.split("/")[2].split("_")[0]
             mode=SC.get("mode",{})
             if mode.get(f"{arm}_arm_control_mode",1)==1: s.target[arm]=list(m.position)
+        elif topic.endswith("_gripper/cmd"):
+            s.gcmd[topic.split("/")[2].split("_")[0]]=m.data
     def step(s):
         now=time.monotonic(); dt=now-s.last; s.last=now
         if s.fsm and now-s.hb>1.0: s.fsm=0; s.pauses+=1
@@ -64,6 +67,9 @@ class Arms:
                 side=s.side if hasattr(s,"side") else None
                 if side is None: s.side=side=(1 if s.q0[a][j]>at else -1)
                 if (s.q[a][j]-at)*side<0: s.q[a][j]=at
+            for arm,c in s.gcmd.items():   # trigger < 0.1 opens (to 1.05 rad), > 0.1 closes (to 0.2 rad)
+                if c is not None and abs(c-0.1)>0.01:
+                    goal=1.05 if c<0.1 else 0.2; d=goal-s.g[arm]; s.g[arm]+=max(-2*dt,min(2*dt,d))
 
 
 ARM=Arms()
@@ -86,6 +92,9 @@ def spin_once(node, timeout_sec=0):
             if node._subs.get(f"/{arm}_arm/joint_states"):
                 a=JointState(); a.name=[f"{arm[0]}_joint{i+1}" for i in range(7)]; a.position=list(ARM.q[arm]); a.velocity=[0.0]*7
                 for cb in node._subs[f"/{arm}_arm/joint_states"]: cb(a)
+            if node._subs.get(f"/{arm}_gripper/joint_states"):
+                g=JointState(); g.name=[f"{arm[0]}_joint8"]; g.position=[ARM.g[arm]]; g.velocity=[0.0]
+                for cb in node._subs[f"/{arm}_gripper/joint_states"]: cb(g)
         if node._subs.get("/fsm_state"):
             from std_msgs.msg import Int32
             for cb in node._subs["/fsm_state"]: cb(Int32(ARM.fsm))

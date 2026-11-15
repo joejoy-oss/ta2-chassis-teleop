@@ -4,12 +4,14 @@
 Usage (inside the openpi-xpu-client container):
   python3 arm_pose.py raise [--time 8] [--dry-run]   both arms to the official zero.py pose
   python3 arm_pose.py lower [--time 8] [--dry-run]   back to the pose saved by the last "raise"
-  python3 arm_pose.py start [--time 8] [--dry-run]   to the VLA training start pose (train_start_pose.json)
+  python3 arm_pose.py start [--time 8] [--dry-run]   to the VLA training start pose (train_start_pose.json),
+                                                     grippers commanded open as at the start of training data
 
 Interfaces (developer doc 4.1, 4.2, 4.11, 4.13):
   publish   /api/{left,right}_arm/joint_cmd  sensor_msgs/JointState  position = 7 joint angles (rad)
   publish   /api/fsm/enable                  std_msgs/Float32        1.0 heartbeat, 0.0 = pause
-  subscribe /{left,right}_arm/joint_states, /fsm_state (Int32: 0 PAUSE, 1 SLOW_START, 2 READY),
+  publish   /api/{left,right}_gripper/cmd    std_msgs/Float32        trigger 0..1 (start only; 0.0 = open force)
+  subscribe /{left,right}_arm/joint_states, /{left,right}_gripper/joint_states, /fsm_state (Int32: 0 PAUSE, 1 SLOW_START, 2 READY),
             /api/current_mode (needs meta_mode 1, both arms enabled, both arm control modes 1 = joint)
 
 Safety:
@@ -90,9 +92,11 @@ def main():
     signal.signal(signal.SIGHUP, to_interrupt)
 
     n = Node("ta2_arm_pose")
-    st = {"q": {}, "names": {}, "t": {}, "fsm": None, "mode": None}
+    st = {"q": {}, "names": {}, "t": {}, "fsm": None, "mode": None, "g": {}}
     pubs = {arm: n.create_publisher(JointState, f"/api/{arm}_arm/joint_cmd", 10) for arm in ARMS}
     hb = n.create_publisher(Float32, "/api/fsm/enable", 10)
+    gpubs = {arm: n.create_publisher(Float32, f"/api/{arm}_gripper/cmd", 10) for arm in ARMS}
+    grip = {}                 # arm -> gripper trigger to send with every joint_cmd ("start" only)
 
     def on_js(arm):
         def cb(m):
@@ -103,6 +107,9 @@ def main():
         return cb
     for arm in ARMS:
         n.create_subscription(JointState, f"/{arm}_arm/joint_states", on_js(arm), 10)
+    for arm in ARMS:
+        n.create_subscription(JointState, f"/{arm}_gripper/joint_states",
+                              lambda m, arm=arm: m.position and st["g"].__setitem__(arm, m.position[0]), 10)
     n.create_subscription(Int32, "/fsm_state", lambda m: st.__setitem__("fsm", m.data), 10)
 
     def on_mode(m):
@@ -128,6 +135,8 @@ def main():
             m.velocity = [0.0] * 7
             m.effort = [0.0] * 7
             pubs[arm].publish(m)
+            if arm in grip:          # the gripper command rides on the arm control stream (doc 4.1)
+                gpubs[arm].publish(Float32(data=grip[arm]))
 
     def spin_for(sec, cmd_fn=None, check=None):
         end = time.monotonic() + sec
@@ -176,7 +185,8 @@ def main():
                 with open(TRAIN_START) as f:
                     saved = json.load(f)
                 target = {arm: clip(arm, saved[arm]) for arm in ARMS}
-            except (OSError, ValueError, KeyError):
+                grip_start = {arm: min(max(float(saved["gripper_cmd"][arm]), 0.0), 1.0) for arm in ARMS}
+            except (OSError, ValueError, KeyError, TypeError):
                 raise Abort(f"cannot read training start pose {TRAIN_START}")
         else:
             try:
@@ -191,6 +201,10 @@ def main():
         for arm in ARMS:
             print(f"{arm:5s} now   ", [round(v, 2) for v in start[arm]])
             print(f"{arm:5s} target", [round(v, 2) for v in target[arm]])
+        if a.action == "start":
+            print("Grippers: command", grip_start, "(0.0 = full opening force) during the move; now",
+                  {arm: round(v, 2) for arm, v in st["g"].items()} or "no gripper feedback",
+                  "rad (training starts: about 1.05 = open)")
         print(f"Largest joint change {delta:.2f} rad, motion time {dur:.1f} s, peak {1.875 * delta / dur:.2f} rad/s")
         if a.dry_run:
             print("Dry run: nothing sent.")
@@ -207,6 +221,8 @@ def main():
             raise Abort(f"FSM did not reach READY within {READY_TIMEOUT:.0f} s "
                         f"(state {FSM.get(st['fsm'], st['fsm'])})")
         # 2. smooth move
+        if a.action == "start":
+            grip.update(grip_start)
         print(f">> moving ({dur:.1f} s). Ctrl+C holds and pauses.", flush=True)
         t0 = time.monotonic()
         lag_since = [None]
@@ -249,6 +265,9 @@ def main():
         else:
             print("Reached the target.")
         spin_for(1.0, cmd_fn=lambda now: target)
+        if grip:
+            print("Grippers now", {arm: round(v, 2) for arm, v in st["g"].items()} or "no gripper feedback",
+                  "rad (open is about 1.05)", flush=True)
         hold = None
     except Abort as e:
         print(f"Aborted: {e}", flush=True)

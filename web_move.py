@@ -277,76 +277,99 @@ def send(cmd, d=None):
 
 PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>TA2 Chassis</title>
+<title>TA2 Remote</title>
 <style>
-:root{--bg:#f4f6f7;--fg:#15212a;--muted:#5d6d78;--panel:#fff;--line:#cfd9de;--grid:#e6ecef;--accent:#0d6a88;--stop:#c0392b;--trail:#d9822b}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1519;--fg:#e2eaee;--muted:#93a5b0;--panel:#18232a;--line:#2a3a44;--grid:#1f2c34;--accent:#5cb7d6;--stop:#e5584a;--trail:#f0a050}}
+:root{--bg:#f4f6f7;--fg:#15212a;--muted:#5d6d78;--panel:#fff;--line:#cfd9de;--grid:#e6ecef;--accent:#0d6a88;--stop:#c0392b;--trail:#d9822b;--ok:#2e7d4f}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1519;--fg:#e2eaee;--muted:#93a5b0;--panel:#18232a;--line:#2a3a44;--grid:#1f2c34;--accent:#5cb7d6;--stop:#e5584a;--trail:#f0a050;--ok:#5fbf86}}
 *{box-sizing:border-box}
-html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
-.app{height:100%;display:grid;grid-template-columns:minmax(260px,360px) minmax(0,1fr);gap:16px;padding:16px}
-.left{display:flex;flex-direction:column;gap:14px;min-width:0}
-.right{display:grid;grid-template-rows:minmax(120px,1fr) minmax(220px,2fr);gap:16px;min-width:0;min-height:0}
-@media (max-width:760px){.app{height:auto;grid-template-columns:minmax(0,1fr)}.right{grid-template-rows:200px 360px}}
-h1{font-size:20px;margin:0}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-height:0;display:flex;flex-direction:column}
-.panel h2{font-size:13px;font-weight:600;color:var(--muted);margin:0;padding:8px 12px;border-bottom:1px solid var(--line);
-  display:flex;justify-content:space-between;align-items:center;gap:8px}
-.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.rot{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.tools{display:flex;gap:6px;flex-wrap:wrap}
-#rec{color:var(--stop);font-weight:700;visibility:hidden}
-.paths{padding:0}
-.plist{display:flex;flex-direction:column}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.bar{max-width:1240px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:12px}
+h1{font-size:17px;margin:0;white-space:nowrap}
+#status{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}
+.badge.ok{color:var(--ok)}.badge.bad{color:var(--stop)}
+.app{max-width:1240px;margin:0 auto;padding:16px;display:grid;gap:16px;align-items:start;
+  grid-template-columns:280px 300px minmax(0,1fr);grid-template-areas:"drive side map"}
+.drive{grid-area:drive}.side{grid-area:side}.map{grid-area:map}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+@media (max-width:1100px){.app{grid-template-columns:300px minmax(0,1fr);grid-template-areas:"drive map" "side map"}}
+@media (max-width:720px){.app{grid-template-columns:minmax(0,1fr);grid-template-areas:"drive" "side" "map"}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.card h2{font-size:13px;font-weight:600;margin:0;padding:8px 12px;border-bottom:1px solid var(--line);
+  display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:40px}
+.body{padding:12px}
+.hint{color:var(--muted);font-size:12px;margin:10px 0 0}
+.muted{color:var(--muted)}
+button{font:inherit;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer;
+  touch-action:none;user-select:none;-webkit-user-select:none}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pad button,.rot button{height:56px;font-size:15px}
+.rot{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.stopbtn{background:var(--stop)!important;border-color:var(--stop)!important;color:#fff!important;font-weight:700}
+#stop2{padding:6px 18px}
+.small{font-size:12px;padding:4px 10px;border-radius:6px}
+.tools{display:flex;gap:6px}
+.arms{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.arms button{padding:8px 4px;display:flex;flex-direction:column;align-items:center;gap:2px;font-weight:600}
+.arms button span{font-size:11px;font-weight:400;color:var(--muted)}
+#armstart{border-color:var(--accent)}
+#armst{margin-top:10px;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.plist{max-height:200px;overflow:auto}
 .prow{display:flex;align-items:center;gap:8px;padding:6px 12px;border-top:1px solid var(--line);font-size:13px;cursor:pointer}
 .prow:first-child{border-top:none}
 .prow.sel{background:var(--grid)}
 .prow.run{color:var(--accent);font-weight:700}
-.prow .nm{font-weight:600;min-width:42px}
+.prow .nm{font-weight:600;min-width:36px}
 .prow .info{color:var(--muted);flex:1;font-variant-numeric:tabular-nums}
-.left{overflow:auto}
-button{font:inherit;font-size:17px;padding:22px 0;border-radius:10px;border:1px solid var(--line);
-  background:var(--panel);color:var(--fg);cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none}
-button:hover:not(:disabled){border-color:var(--accent)}
-button.on{background:var(--accent);border-color:var(--accent);color:#fff}
-button:disabled{opacity:.4;cursor:not-allowed}
-#stop{background:var(--stop);border-color:var(--stop);color:#fff;font-weight:700}
-.small{font-size:12px;padding:3px 10px;border-radius:6px}
-#status{font-weight:600}
-.muted{color:var(--muted);font-size:13px}
-pre{margin:0;padding:10px 12px;font-size:12px;overflow:auto;white-space:pre-wrap;flex:1;min-height:0}
-.canvas-wrap{flex:1;min-height:0;position:relative}
+.canvas-wrap{position:relative;aspect-ratio:4/3;max-height:480px;width:100%}
 canvas{position:absolute;inset:0;width:100%;height:100%}
-#pose{font-variant-numeric:tabular-nums;font-weight:400}
-</style></head><body><div class="app">
-<div class="left">
-  <h1>TA2 Chassis</h1>
-  <div id="status">connecting...</div>
-  <div class="pad">
-    <span></span><button data-d="forward">Forward</button><span></span>
-    <button data-d="left">Left</button><button id="stop">STOP</button><button data-d="right">Right</button>
-    <span></span><button data-d="back">Back</button><span></span>
-  </div>
-  <div class="rot"><button data-d="ccw">&#10226; CCW</button><button data-d="cw">CW &#10227;</button></div>
-  <div class="panel"><h2><span>Arms</span><span class="tools">
-    <button class="small" id="armraise">Raise arms</button><button class="small" id="armlower">Lower arms (slowly)</button><button class="small" id="armstart">Start pose</button></span></h2>
-    <div class="muted" id="armst" style="padding:6px 12px">arms: idle</div>
-  </div>
-  <div class="panel paths"><h2><span>Paths</span><span class="tools">
-    <button class="small" id="load">Load files</button><button class="small" id="runall">Run all in order</button></span></h2>
+#pose{font-variant-numeric:tabular-nums;font-weight:400;color:var(--muted)}
+#rec{color:var(--stop);font-weight:700;visibility:hidden}
+pre{margin:0;padding:8px 12px;font-size:12px;height:170px;overflow:auto;white-space:pre-wrap}
+</style></head><body>
+<header><div class="bar"><h1>TA2 Remote</h1><span id="mode" class="badge">mode ?</span>
+  <span id="status">connecting...</span><button id="stop2" class="stopbtn">STOP</button></div></header>
+<div class="app">
+<div class="col drive">
+  <div class="card"><h2>Chassis</h2><div class="body">
+    <div class="pad">
+      <span></span><button data-d="forward">Forward</button><span></span>
+      <button data-d="left">Left</button><button id="stop" class="stopbtn">STOP</button><button data-d="right">Right</button>
+      <span></span><button data-d="back">Back</button><span></span>
+    </div>
+    <div class="rot"><button data-d="ccw">&#10226; CCW</button><button data-d="cw">CW &#10227;</button></div>
+    <p class="hint">Click: 10 cm / 15&deg;. Hold: 0.05 m/s or 11.5&deg;/s until release (max 10 s).</p>
+  </div></div>
+</div>
+<div class="col side">
+  <div class="card"><h2>Arms</h2><div class="body">
+    <div class="arms">
+      <button id="armstart">Start pose<span>10 s &middot; VLA</span></button>
+      <button id="armraise">Raise<span>8 s</span></button>
+      <button id="armlower">Lower<span>15 s, slow</span></button>
+    </div>
+    <div id="armst">arms: idle</div>
+    <p class="hint">Start pose = training start, grippers open; use before inference. Lower returns to the pose saved before Raise. Needs joint control mode.</p>
+  </div></div>
+  <div class="card"><h2><span>Paths</span><span class="tools">
+    <button class="small" id="load">Load</button><button class="small" id="runall">Run all</button></span></h2>
     <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
     <div class="plist" id="plist"><div class="prow muted">No paths loaded</div></div>
+    <p class="hint" style="padding:0 12px 10px">Runs from the current pose; 10 s stop at each corner. Click a row to preview.</p>
   </div>
-  <div class="muted">Arms: raise takes 8 s, lower 15 s (back to the pose saved before raising), Start pose 10 s (VLA training start pose, use before inference); arms need joint control mode. Paths stop for 10 s at every corner. Click: move 10 cm / turn 15&deg; in place. Press and hold: keeps moving at 0.05 m/s (turning at 11.5&deg;/s) until you let go, max 10 s per hold. Keep someone at the e-stop.</div>
 </div>
-<div class="right">
-  <div class="panel"><h2>Log</h2><pre id="log"></pre></div>
-  <div class="panel"><h2><span>Trajectory <span id="rec">&#9679; REC</span> <span id="pose"></span></span>
+<div class="col map">
+  <div class="card"><h2><span>Trajectory <span id="rec">&#9679; REC</span> <span id="pose"></span></span>
     <span class="tools"><button class="small" id="recstart">Start</button><button class="small" id="recstop">Stop</button>
     <button class="small" id="save">Save</button><button class="small" id="reset">Reset</button></span></h2>
     <div class="canvas-wrap"><canvas id="cv"></canvas></div>
-    <div class="muted" style="padding:4px 12px 8px">Wheel odometry estimate (not tape-calibrated). Up = robot forward at the origin, grid 10 cm. Start/Stop records the trail, Save downloads a CSV (copy kept on B70 in /root/ta2_trails/), Reset sets the origin to the current pose.</div>
+    <p class="hint" style="padding:0 12px 10px">Wheel odometry, grid 10 cm, up = forward at the origin. Save downloads a CSV (copy in /root/ta2_trails/).</p>
   </div>
+  <div class="card"><h2>Log</h2><pre id="log"></pre></div>
 </div>
 </div><script>
 const st=document.getElementById('status'),lg=document.getElementById('log'),poseEl=document.getElementById('pose');
@@ -372,7 +395,8 @@ moves.forEach(b=>{
 });
 window.addEventListener('blur',end);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)end()});
-document.getElementById('stop').onclick=()=>{end();post('/stop')};
+document.getElementById('stop').onclick=document.getElementById('stop2').onclick=()=>{end();post('/stop')};
+const modeEl=document.getElementById('mode');
 document.getElementById('reset').onclick=()=>post('/reset');
 document.getElementById('recstart').onclick=()=>post('/rec/start');
 document.getElementById('recstop').onclick=()=>post('/rec/stop');
@@ -477,11 +501,11 @@ async function poll(){try{
   let t=!s.connected?'connecting to robot...':s.moving?('moving: '+s.moving):s.last;
   if(s.seq.length)t='run all: '+s.seq.map((n,i)=>i===s.seq_i?'['+n+']':n).join(' → ')+(s.moving?'  ('+s.moving+')':'');
   if(s.arm)t='arms: '+s.arm+' in progress (STOP holds them where they are)';
-  if(s.mode_ok===false)t+='  |  robot NOT in API mode / chassis disabled';
-  armSt.textContent=s.arm?('arms: '+s.arm+'...'):s.arm_last;
+  modeEl.textContent=s.mode_ok?'API mode':s.mode_ok===false?'not API mode':'mode ?';modeEl.className='badge'+(s.mode_ok?' ok':s.mode_ok===false?' bad':'');
+  armSt.textContent=s.arm?('arms: '+s.arm+' in progress...'):s.arm_last;
   const still=!s.moving&&!s.seq.length&&!s.arm;
   armRaise.disabled=!still;armLower.disabled=!still;armStart.disabled=!still;
-  st.textContent=t+'  (clicks '+s.clicks+', holds '+s.holds+')';
+  st.textContent=t;
   const busyStep=s.moving&&(s.moving.startsWith('step')||s.moving.startsWith('path'))||s.seq.length>0||!!s.arm;
   const pathBusy=!!s.active_path||s.seq.length>0||!!s.arm;
   document.querySelectorAll('.prow button').forEach(b=>b.disabled=pathBusy);
