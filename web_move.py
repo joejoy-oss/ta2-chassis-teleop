@@ -421,6 +421,38 @@ def record_gripper(body):
     return record
 
 
+def classify_gripper(hand="right", seconds=1.0):
+    """Read-only: sample one gripper for `seconds` and say what it is doing, with the numbers behind it."""
+    if hand not in ("left", "right") or not .2 <= seconds <= 5:
+        raise APIError(400, "BAD_REQUEST", "hand must be left/right and seconds 0.2-5")
+    samples, end = [], time.monotonic() + seconds
+    while True:
+        samples.append(gripper_monitor.readings()[hand])
+        if time.monotonic() >= end:
+            break
+        time.sleep(.1)
+    classes = [mission_module.classify_grip({"grip_pos": x["pos"], "grip_eff": x["eff"]}, hand) for x in samples]
+    counts = {c: classes.count(c) for c in dict.fromkeys(classes)}
+    verdict = max(counts, key=counts.get)
+    pos = [x["pos"] for x in samples if mission_module.finite(x["pos"])]
+    eff = [x["eff"] for x in samples if mission_module.finite(x["eff"])]
+    p, e = (sum(pos) / len(pos) if pos else None), (sum(eff) / len(eff) if eff else None)
+    threshold = mission_module.hold_threshold(hand)
+    why = {"open": f"位置 {p:.3f} rad > {mission_module.HOLD_POS_MAX:g}（张开）",
+           "empty": f"在用力（力矩 {e:.2f} ≤ {mission_module.HOLD_EFF_MAX:g}），位置 {p:.3f} < 空夹门槛 {threshold:.4f}",
+           "thin": f"在用力（力矩 {e:.2f}），位置 {p:.3f} ≥ 空夹门槛 {threshold:.4f}，且 < 实体分界 {mission_module.THIN_SOLID_SPLIT:g}",
+           "solid": f"在用力（力矩 {e:.2f}），位置 {p:.3f} ≥ 实体分界 {mission_module.THIN_SOLID_SPLIT:g}",
+           "closing": f"位置 {p:.3f} 在张开和夹紧之间，但力矩 {e:.2f} > {mission_module.HOLD_EFF_MAX:g}（没在用力）",
+           "unknown": "没有有效读数"}[verdict] if p is not None and e is not None else "没有有效读数"
+    return {"hand": hand, "verdict": verdict, "label": mission_module.GRIP_CLASSES[verdict],
+            "holding": verdict in ("thin", "solid"), "why": why, "samples": len(samples), "counts": counts,
+            "pos_rad": None if p is None else round(p, 4), "eff_nm": None if e is None else round(e, 3),
+            "fresh": all(x["fresh"] for x in samples),
+            "rule": {"empty_closed": mission_module.EMPTY_CLOSED[hand], "hold_threshold": round(threshold, 4),
+                     "thin_solid_split": mission_module.THIN_SOLID_SPLIT, "open_above": mission_module.HOLD_POS_MAX,
+                     "pushing_effort_at_most": mission_module.HOLD_EFF_MAX}}
+
+
 def gripper_records(limit=100):
     try:
         with open(GRIP_LOG) as f:
@@ -1221,6 +1253,10 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
       <button class="small" data-glabel="实体">记录：实体</button><button class="small" data-glabel="薄片">记录：薄片</button><button class="small" data-glabel="空夹">记录：空夹</button>
       <input id="griplabel" placeholder="其他标签" maxlength="40" size="10"><button class="small" id="gripcustom">记录</button></div>
     <p id="gripst" class="status-line" role="status"></p>
+    <div class="grip-rec"><button class="small" id="gripclassify">判定当前状态</button>
+      <span class="status-line" style="display:inline">用上面选的夹爪：张开 / 空夹 / 夹住（薄片） / 夹住（实体）</span></div>
+    <p id="gripverdict" class="status-line" role="status" style="font-size:16px;font-weight:700"></p>
+    <ol id="gripverdicts" class="status-line" style="font-size:12px;margin:0"></ol>
     <div style="overflow-x:auto"><table id="griptable" style="font-size:12px;border-collapse:collapse;width:100%"></table></div>
   </div></section>
   <section class="card"><div class="body">
@@ -1375,6 +1411,18 @@ async function loadGripRecords(){
   }catch(e){}
 }
 document.querySelectorAll('[data-glabel]').forEach(b=>b.onclick=()=>gripRecord(b.dataset.glabel));
+document.getElementById('gripclassify').onclick=async()=>{
+  const out=document.getElementById('gripverdict'),btn=document.getElementById('gripclassify'),hand=document.getElementById('griphand').value;
+  btn.disabled=true;out.textContent='判定中（约 1 秒）…';
+  try{const r=await fetch('/api/v1/grippers/classify?hand='+hand+'&seconds=1');const d=await r.json();
+    if(!r.ok)throw Error((d.error&&d.error.message)||r.status);
+    const text=(hand==='right'?'右爪':'左爪')+'：'+d.label+(d.fresh?'':'（读数不新鲜）');
+    out.textContent=text;const li=document.createElement('li');
+    li.textContent=new Date().toTimeString().slice(0,8)+' '+text+' · '+d.why+' · 帧 '+JSON.stringify(d.counts);
+    const ol=document.getElementById('gripverdicts');ol.prepend(li);while(ol.children.length>10)ol.lastChild.remove();
+  }catch(e){out.textContent='判定失败：'+e.message}
+  finally{btn.disabled=false}
+};
 document.getElementById('gripcustom').onclick=()=>gripRecord(document.getElementById('griplabel').value);
 loadGripRecords();
 const armDown5=document.getElementById('armdown5');armDown5.onclick=async()=>{const r=await post('/arm/down5');if(r.error)st.textContent=r.error};
@@ -1553,6 +1601,13 @@ class Handler(BaseHTTPRequestHandler):
         # Monitor startup/service inspection must not block STOP or action polling.
         if path == "/api/v1/grippers":
             return self._send(200, gripper_monitor.readings())
+        if path == "/api/v1/grippers/classify":
+            q = parse_qs(query)
+            try:
+                seconds = float(q.get("seconds", ["1"])[0])
+            except ValueError:
+                raise APIError(400, "BAD_REQUEST", "seconds must be a number")
+            return self._send(200, classify_gripper(q.get("hand", ["right"])[0], seconds))
         if path == "/api/v1/grippers/records":
             raw = parse_qs(query).get("limit", ["100"])[0]
             limit = int(raw) if raw.isdigit() and 1 <= int(raw) <= 1000 else 100

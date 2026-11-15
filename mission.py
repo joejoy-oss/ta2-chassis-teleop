@@ -29,6 +29,7 @@ EMPTY_CLOSED = {"right": float(os.environ.get("HOLD_EMPTY_RIGHT", "-0.0485")),
 HOLD_MARGIN = float(os.environ.get("HOLD_MARGIN", "0.01"))     # rad above empty-closed (25x its noise)
 EMPTY_PERSIST = float(os.environ.get("EMPTY_PERSIST", "1.0"))   # s closed on nothing -> attempt failed at once
 NO_LIFT_S = float(os.environ.get("NO_LIFT_S", "10"))            # s holding without the lift -> attempt failed
+THIN_SOLID_SPLIT = float(os.environ.get("THIN_SOLID_SPLIT", "0.25"))  # rad; right: thin <= 0.13, solid >= 0.37
 HOLD_POS_MAX = float(os.environ.get("HOLD_POS_MAX", "0.75"))
 HOLD_EFF_MAX = float(os.environ.get("HOLD_EFF_MAX", "-1.0"))
 LIFT_MIN = float(os.environ.get("LIFT_MIN", "0.04"))
@@ -79,6 +80,25 @@ def closed_empty(sample, side=None):
     """The gripper pushes closed and reached its empty-closed position: nothing between the fingers."""
     pos, eff = sample.get("grip_pos"), sample.get("grip_eff")
     return finite(pos) and finite(eff) and eff <= HOLD_EFF_MAX and pos < hold_threshold(side)
+
+
+GRIP_CLASSES = {"open": "张开", "empty": "空夹", "thin": "夹住（薄片）", "solid": "夹住（实体）",
+                "closing": "合拢中 / 没用力", "unknown": "无有效读数"}
+
+
+def classify_grip(sample, side=None):
+    """One reading -> open / empty / thin / solid / closing / unknown (the same rules as the grasp detector;
+    thin vs solid only splits 'holding' by position for display)."""
+    pos, eff = sample.get("grip_pos"), sample.get("grip_eff")
+    if not (finite(pos) and finite(eff)):
+        return "unknown"
+    if pos > HOLD_POS_MAX:
+        return "open"
+    if closed_empty(sample, side):
+        return "empty"
+    if holding(sample, side):
+        return "solid" if pos >= THIN_SOLID_SPLIT else "thin"
+    return "closing"
 
 
 def grasp_update(previous, sample, t, side=None):

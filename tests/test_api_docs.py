@@ -33,12 +33,12 @@ class APIDocsTests(_ModuleServer, unittest.TestCase):
 
     def test_rtc_catalog_and_removed_ids_rejected(self):
         models = self.client.models()
-        expected = {model + '_rtc' for model in REMOVED}
-        self.assertEqual({m['id'] for m in models['models']}, expected)
-        self.assertTrue(all(m['rtc'] for m in models['models']))
-        self.assertEqual(models['selected'], 'grasp_v3_step13000_rtc')
         config = json.loads((ROOT / 'vla_models.json').read_text())
-        self.assertEqual(config['default'], 'grasp_v3_step13000_rtc')
+        # Only RTC entries are registered (the catalogue itself changes as checkpoints are deployed).
+        self.assertEqual({m['id'] for m in models['models']}, {m['id'] for m in config['models']})
+        self.assertTrue(all(m['id'].endswith('_rtc') for m in config['models']))
+        self.assertTrue(all(m['rtc'] for m in models['models']))
+        self.assertEqual(models['selected'], config['default'])
         for model in REMOVED:
             self.error('UNKNOWN_MODEL', 400, self.client.vla_grasp, model=model)
             self.error('UNKNOWN_MODEL', 400, self.client.preflight, model=model)

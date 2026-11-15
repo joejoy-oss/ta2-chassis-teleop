@@ -96,6 +96,19 @@ class GraspTests(unittest.TestCase):
             self.assertFalse(holding(sample(pos=pos, eff=eff), "right"), (pos, eff))
             self.assertTrue(closed_empty(sample(pos=pos, eff=eff), "right"), (pos, eff))
 
+    def test_classify_calibration_records(self):
+        from mission import classify_grip
+        c = lambda p, e: classify_grip(sample(pos=p, eff=e), "right")
+        for p, e in [(.5169, -2.74), (.5604, -2.81), (.3658, -2.47)]:
+            self.assertEqual(c(p, e), "solid")
+        for p, e in [(.1285, -2.04), (.0542, -1.90), (-.0032, -1.80), (-.0341, -1.73)]:
+            self.assertEqual(c(p, e), "thin")
+        for p, e in [(-.0485, -1.71), (-.047, -1.71)]:
+            self.assertEqual(c(p, e), "empty")
+        self.assertEqual(c(.99, .24), "open")
+        self.assertEqual(c(.4, -.5), "closing")
+        self.assertEqual(c(None, -1), "unknown")
+
     def test_empty_ends_attempt_after_persist(self):
         frames = [(i / 10, sample(pos=-0.0485, eff=-1.71)) for i in range(int(EMPTY_PERSIST * 10))]
         self.assertFalse(self.sequence(frames + [(EMPTY_PERSIST - .05, sample(pos=-0.0485, eff=-1.71))])["empty"])

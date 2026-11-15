@@ -55,6 +55,14 @@ class ModuleAPI(_ModuleServer, unittest.TestCase):
         self.assertEqual(listing["records"][0]["label"], "实体")
         self.assertIn("griptable", self.request_text("/"))
 
+    def test_gripper_classify(self):
+        code, d = self.request("GET", "/api/v1/grippers/classify?hand=right&seconds=0.3")
+        self.assertEqual(code, 200, d)
+        self.assertEqual((d["verdict"], d["label"], d["holding"]), ("open", "张开", False))
+        self.assertIn("rule", d)
+        self.assertEqual(self.request("GET", "/api/v1/grippers/classify?hand=both")[0], 400)
+        self.assertIn("gripclassify", self.request_text("/"))
+
     def test_arm_move_forward_and_validation(self):
         result = self.client.arm_move("right", forward_cm=5, wait=True, poll=.03)
         self.assertEqual(result["status"], "succeeded", result)
