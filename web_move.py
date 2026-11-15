@@ -2,7 +2,7 @@
 """TA2 web remote (chassis, arms, VLA grasp). Runs on B70.
 
 Page (Chinese, single column, phone friendly): top bar with connection / API mode / current activity
-and the only red button, 急停 (E-STOP, also the Esc key); then VLA 抓取 (main), 路线, 底盘, and folded
+and the only red button, 急停 (E-STOP, also the Esc key); then 全流程, VLA 抓取, 路线, 底盘, and folded
 路径与轨迹 and 日志 sections. The chassis centre 停 is the soft STOP described below.
 
 Start:  nohup python3 /root/web_move.py > /root/web_move.log 2>&1 &
@@ -40,11 +40,20 @@ Motion is done by teleop.py, a long-running ROS node inside the openpi-xpu-clien
 container, fed over stdin. If this server exits, teleop.py sees EOF, sends zero and exits.
 """
 import collections
+import copy
+import datetime
 import json
 import os
+import shlex
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import mission as mission_module
+import queue
 import subprocess
 import threading
 import time
+import uuid
+from urllib.parse import parse_qs, unquote, urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("PORT", "8088"))
@@ -54,24 +63,38 @@ CONTAINER = "openpi-xpu-client"
 TELEOP = ["docker", "exec", "-i", CONTAINER, "/usr/local/bin/openpi-client-entrypoint.sh",
           "python3", "-u", "/outputs/tools/teleop.py"]
 if os.environ.get("TELEOP_CMD"):              # for offline testing
-    TELEOP = os.environ["TELEOP_CMD"].split()
+    TELEOP = shlex.split(os.environ["TELEOP_CMD"])
 DIRS = ("forward", "back", "left", "right", "ccw", "cw")
 TRAIL_DIR = os.environ.get("TRAIL_DIR", "/root/ta2_trails")
 PATH_DIR = os.environ.get("PATH_DIR", "/root/ta2_paths")
 PATH_PAUSE = float(os.environ.get("PATH_PAUSE", "10"))   # Run all: seconds to stand still after each path
 ROUTES = {"g2r": ("绿 → 红", ["001", "002"]), "r2g": ("红 → 绿", ["003", "004"])}
-ARM_CMD = os.environ.get("ARM_CMD", f"docker exec {CONTAINER} /usr/local/bin/openpi-client-entrypoint.sh "
-                                    "python3 -u /outputs/arm/arm_pose.py").split()
-ARM_STOP = os.environ.get("ARM_STOP", f"docker exec {CONTAINER} pkill -INT -f arm_pose.py").split()
+ARM_CMD = shlex.split(os.environ.get("ARM_CMD", f"docker exec {CONTAINER} /usr/local/bin/openpi-client-entrypoint.sh "
+                                    "python3 -u /outputs/arm/arm_pose.py"))
+ARM_STOP = shlex.split(os.environ.get("ARM_STOP", f"docker exec {CONTAINER} pkill -INT -f arm_pose.py"))
 # E-STOP: every process in the container whose command line matches this is stopped
-ESTOP_PROCS = "guarded_grasp.py|arm_pose.py"
-DEXEC = os.environ.get("ESTOP_DEXEC", f"docker exec {CONTAINER}").split()   # "echo" for offline tests
+ESTOP_PROCS = "guarded_grasp.py|arm_pose.py|grasp_monitor.py"
+DEXEC = shlex.split(os.environ.get("ESTOP_DEXEC", f"docker exec {CONTAINER}"))   # "echo" for offline tests
 FSM_PAUSE = ["/usr/local/bin/openpi-client-entrypoint.sh", "timeout", "8", "ros2", "topic", "pub",
              "-r", "20", "-t", "40", "/api/fsm/enable", "std_msgs/msg/Float32", "{data: 0.0}"]
-VLA_CMD = os.environ.get("VLA_CMD", "/root/vla_run.sh").split()
+VLA_CMD = shlex.split(os.environ.get("VLA_CMD", "/root/vla_run.sh"))
 VLA_SECONDS, VLA_SPEED = "60", "0.5"
-POLICY_CONTAINER = os.environ.get("POLICY_CONTAINER", "sandbag-step4999-policy")
-ARM_TIME = {"raise": 8, "lower": 15, "start": 10}    # seconds; lower is slower on purpose
+POLICY_CONTAINER = os.environ.get("POLICY_CONTAINER", "")
+with open(os.path.join(os.path.dirname(__file__), "vla_models.json")) as model_file:
+    MODEL_CONFIG = json.load(model_file)
+VLA_MODELS = {model["id"]: model for model in MODEL_CONFIG["models"]}
+DEFAULT_MODEL = MODEL_CONFIG["default"]
+assert DEFAULT_MODEL in VLA_MODELS, "default VLA model must be registered"
+VLA_SELECTION_FILE = os.environ.get("VLA_SELECTION_FILE", "/root/ta2_vla_selected.json")
+try:
+    with open(VLA_SELECTION_FILE) as selection_file:
+        saved_model = json.load(selection_file)["model"]
+except (OSError, ValueError, KeyError, TypeError):
+    saved_model = DEFAULT_MODEL
+if not isinstance(saved_model, str) or saved_model not in VLA_MODELS:
+    saved_model = DEFAULT_MODEL
+ARM_TIME = {"raise": 8, "lower": 15, "start": 10, "start_hold": 10, "down5": 8, "open_right": 3, "close_right": 3, "open_left": 3, "close_left": 3}
+ARM_DOWN_CMD = shlex.split(os.environ.get("ARM_DOWN_CMD", "/root/arm_down.sh"))   # base command; callers append side and cm
 # start = VLA training start pose (arm/train_start_pose.json, first frame of a training episode)
 paths = {}                  # name -> {"points": [[x, y, th], ...], "length": m, "end": [dx, dy]}
 seq = {"names": [], "i": -1, "abort": False, "route": None, "pause_until": None}
@@ -84,12 +107,171 @@ state = {"connected": False, "moving": None, "mode_ok": None, "last": "starting"
          "pose": [0.0, 0.0, 0.0], "epoch": int(time.time()),    # epoch changes on restart and on trail reset
          "recording": False, "rec_t0": None, "active_path": None, "path_anchor": [0.0, 0.0, 0.0],
          "arm": None, "arm_last": "arms: not moved yet", "estop": False, "estop_last": None,
-         "vla": None, "vla_last": "VLA: not run yet", "route_last": None}
+         "vla": None, "vla_model": None, "vla_selected": saved_model,
+         "vla_last": "VLA: not run yet", "route_last": None}
 trail = []                  # [[x, y, th, t], ...]; metres / rad / s; x = right, y = forward of the origin
 TRAIL_MAX = 20000
 log = collections.deque(maxlen=60)
 lock = threading.Lock()
 proc = {"p": None}
+ACTION_LOG = os.environ.get("ACTION_LOG", "/root/ta2_actions.jsonl")
+actions = collections.deque(maxlen=200)   # API records only, newest first
+current_action = [None]                  # worker reservation, retained until motion really ends
+pending_motion = [None]                  # includes web commands awaiting teleop acknowledgement
+terminal_claims = {}                     # atomic pop chooses exactly one terminal status
+log_claims = {}                          # append once, after the worker supplies its result
+action_logs = queue.SimpleQueue()
+
+
+class APIError(Exception):
+    def __init__(self, status, code, message):
+        self.status, self.code, self.message = status, code, message
+        super().__init__(message)
+
+
+def timestamp():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def busy():
+    return bool(mission.active or current_action[0] or pending_motion[0] or state["moving"] or
+                seq["names"] or state["arm"] or state["vla"])
+
+
+def action_log_loop():
+    while True:
+        record = action_logs.get()
+        try:
+            with open(ACTION_LOG, "a") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError as e:
+            note(f"action log: {e}")
+
+
+def end_action(action, result, success=False, code=None, release=True):
+    # Normally called under seq_lock. E-STOP may call without it: a single dict
+    # update publishes the terminal status. Logging is queued when the worker exits.
+    if action is None:
+        return
+    if terminal_claims.pop(action["id"], None) is action:
+        why = str(result.get("why") or result.get("error") or result.get("result") or result.get("status") or result)
+        if code is None and not success:
+            text = str(result.get("path_why") or why).lower()
+            if "not in api mode" in text:
+                code = "NOT_API_MODE"
+            elif "feedback" in text or "connection lost" in text:
+                code = "FEEDBACK_LOST"
+            elif "disconnected" in text:
+                code = "TELEOP_DISCONNECTED"
+            elif "timeout" in text or "timed out" in text:
+                code = "TIMEOUT"
+            elif "stuck" in text:
+                code = "STUCK"
+            elif text in ("stopped", "released") or text.startswith("stopped before ") or "cancel" in text:
+                code = "STOPPED"
+            else:
+                code = "SCRIPT_ERROR" if action["type"] in ("arm.pose", "vla.grasp") else "ACTION_FAILED"
+        action.update(status="succeeded" if success else "aborted" if code in ("ESTOP", "STOPPED") else "failed",
+                      ended_at=timestamp(), result=result,
+                      error=None if success else {"code": code, "message": why})
+    if release:
+        if action["status"] == "aborted":
+            action["result"] = {**result, "interrupted_by": action["error"]["code"]}
+        if log_claims.pop(action["id"], None) is action:
+            action_logs.put(copy.deepcopy(action))
+        if current_action[0] is action:
+            current_action[0] = None
+
+
+def interrupt_action(code):
+    # No seq_lock, subprocess, file write or network call on the E-STOP request path.
+    action = current_action[0]
+    if action:
+        why = "emergency stop" if code == "ESTOP" else "stopped"
+        result = {"why": why}
+        if action["type"] == "vla.grasp":
+            tag = state["vla"]
+            result.update(status="aborted", actuations=None, error=why, tag=tag,
+                          report=f"/root/openpi-xpu/client/outputs/{tag}/report.json")
+        end_action(action, result, code=code, release=False)
+
+
+def start_sequence(names, route=None, action=None):
+    if state["estop"] or (action and action["status"] != "running"):
+        end_action(action, {"why": "emergency stop"}, code="ESTOP")
+        return
+    last_poll[0] = time.monotonic()
+    seq.update(names=names, i=-1, abort=False, route=route, pause_until=None)
+    threading.Thread(target=run_sequence, args=(names, action), daemon=True).start()
+
+
+def start_arm(pose, action=None):
+    state["arm"] = pose
+    note(f"arms: {pose} ({ARM_TIME[pose]} s)")
+    threading.Thread(target=run_arm, args=(pose, action), daemon=True).start()
+
+
+def public_model(model_id):
+    model = VLA_MODELS[model_id]
+    return {key: model[key] for key in ("id", "name", "training", "prompt", "seconds", "speed")}
+
+
+def model_services():
+    """Read service states only; never start, stop or reload a policy container."""
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", "-f", "{{.Name}} {{.State.Running}}"]
+            + [model["container"] for model in VLA_MODELS.values()],
+            capture_output=True, text=True, timeout=3)
+        running = {fields[0].lstrip("/"): fields[1] == "true"
+                   for line in result.stdout.splitlines() if len(fields := line.split()) == 2}
+    except (OSError, subprocess.TimeoutExpired):
+        running = {}
+    return [{**public_model(model_id), "running": running.get(model["container"], False)}
+            for model_id, model in VLA_MODELS.items()]
+
+
+def select_model(model_id):
+    """Called under seq_lock, so changing selection and dispatching motion are serialized."""
+    temporary = VLA_SELECTION_FILE + ".tmp"
+    try:
+        with open(temporary, "w") as selection_file:
+            json.dump({"model": model_id}, selection_file)
+        os.replace(temporary, VLA_SELECTION_FILE)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    state["vla_selected"] = model_id
+    note("VLA model selected: " + VLA_MODELS[model_id]["name"])
+
+
+def check_policy(port=None, model_id=None):
+    if os.environ.get("VLA_CMD"):  # custom/offline script supplies its own policy
+        return
+    model = VLA_MODELS.get(model_id)
+    if model is None and port is not None:
+        model = next((m for m in VLA_MODELS.values() if m.get("port") == port), None)
+    if model is None:
+        model = VLA_MODELS[state["vla_selected"]]
+    container = POLICY_CONTAINER or model["container"]
+    try:
+        up = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", container],
+                            capture_output=True, text=True, timeout=3).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        up = ""
+    if up != "true":
+        raise APIError(503, "POLICY_DOWN", f"{model['name']} 的模型服务未运行")
+
+
+def start_vla(action=None, model_id=None):
+    model_id = model_id or state["vla_selected"]
+    model = VLA_MODELS[model_id]
+    tag = time.strftime(f"vla_{model_id}_%Y%m%d_%H%M%S_") + str(time.time_ns() % 1000000)
+    state["vla"], state["vla_model"] = tag, model_id
+    note(f"VLA grasp started: {model['name']} / {tag} ({model['seconds']} s, max {model['speed']} rad/s)")
+    args = (tag, model_id) if action is None else (tag, model_id, action)
+    threading.Thread(target=run_vla, args=args, daemon=True).start()
+    return tag
 
 
 def note(msg):
@@ -132,7 +314,7 @@ def load_path_dir():
     note(f"loaded {len(paths)} paths from {PATH_DIR}")
 
 
-def run_sequence(names):
+def run_sequence(names, action=None, guard=None, boundary=None):
     # The request handler reserves names and clears abort before starting this worker.
     # Never clear abort here: STOP may already have arrived after the request.
     route = seq["route"]
@@ -141,7 +323,7 @@ def run_sequence(names):
     try:
         for i, n in enumerate(names):
             with seq_lock:
-                if seq["abort"]:
+                if seq["abort"] or (action and action["status"] != "running") or (guard and not guard()) or (boundary and not boundary()):
                     result = f"stopped before {n}"
                     break
                 seq["i"] = i
@@ -151,6 +333,8 @@ def run_sequence(names):
                     raise RuntimeError("teleop disconnected")
             deadline = time.monotonic() + 3 * paths[n]["length"] / 0.10 + 30
             while not path_done.wait(timeout=0.1) and not seq["abort"]:
+                if guard and not guard():
+                    break
                 if time.monotonic() >= deadline:
                     send("stop")
                     path_result["why"] = "timeout"
@@ -159,11 +343,18 @@ def run_sequence(names):
             if why != "path done":
                 result = f"stopped at {n} ({why})"
                 break
+            if boundary and not boundary():
+                result = f"stopped after {n} (object dropped)"
+                break
             if i < len(names) - 1 and PATH_PAUSE > 0:
                 note(f"run all: {n} done, pausing {PATH_PAUSE:.0f} s before {names[i + 1]}")
                 seq["pause_until"] = time.time() + PATH_PAUSE
                 end = time.monotonic() + PATH_PAUSE
                 while time.monotonic() < end and not seq["abort"]:
+                    if guard and not guard():
+                        break
+                    if boundary and not boundary():
+                        break
                     time.sleep(0.1)
                 seq["pause_until"] = None
             elif not route:     # retain the ordinary Run all settling delay
@@ -180,12 +371,20 @@ def run_sequence(names):
                 state["route_last"] = ROUTES[route][0] + ": " + result
                 note(state["route_last"])
             seq.update(names=[], i=-1, route=None, pause_until=None)
+            end_action(action, {"why": result, "path_why": path_result["why"],
+                                "route_last": state["route_last"] if route else None}, result == "finished")
+
+    return result
 
 
-def run_arm(action):
+def run_arm(action, record=None):
+    rc, last = None, ""
     try:
         ensure_container()
-        p = subprocess.Popen(ARM_CMD + [action, "--time", str(ARM_TIME[action])], stdout=subprocess.PIPE,
+        if state["estop"] or (record and record["status"] != "running"):
+            return
+        cmd = ARM_DOWN_CMD + ["right", "5"] if action == "down5" else ARM_CMD + [action, "--time", str(ARM_TIME[action])]
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, text=True)
         last = ""
         for line in p.stdout:
@@ -199,15 +398,21 @@ def run_arm(action):
         state["arm_last"] = f"arms {action}: error {e}"
         note(state["arm_last"])
     finally:
-        state["arm"] = None
+        with seq_lock:
+            state["arm"] = None
+            end_action(record, {"why": state["arm_last"], "returncode": rc, "output": last}, rc == 0)
 
 
-def run_vla():
-    tag = state["vla"]
-    result = None
+def run_vla(tag, model_id, record=None):
+    model = VLA_MODELS[model_id]
+    label = model["name"]
+    result, rc = None, None
     try:
         ensure_container()
-        p = subprocess.Popen(VLA_CMD + [tag, VLA_SECONDS, VLA_SPEED], stdout=subprocess.PIPE,
+        if state["estop"] or (record and record["status"] != "running"):
+            return
+        command = shlex.split(os.environ["VLA_CMD"]) if os.environ.get("VLA_CMD") else model["command"]
+        p = subprocess.Popen(command + [tag, str(model["seconds"]), str(model["speed"])], stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, text=True)
         for line in p.stdout:
             line = line.rstrip()
@@ -222,14 +427,24 @@ def run_vla():
         rc = p.wait()
         if result and "actuations" in result:
             why = result.get("error") or result["status"]
-            state["vla_last"] = f"VLA {tag}: {result['actuations']} steps, {why}"
+            state["vla_last"] = f"{label} / {tag}: {result['actuations']} steps, {why}"
         else:
-            state["vla_last"] = f"VLA {tag}: exited rc={rc} before running the policy (see log)"
+            state["vla_last"] = f"{label} / {tag}: exited rc={rc} before running the policy (see log)"
     except Exception as e:  # noqa: BLE001
-        state["vla_last"] = f"VLA {tag}: error {e}"
+        state["vla_last"] = f"{label} / {tag}: error {e}"
     finally:
-        state["vla"] = None
-        note(state["vla_last"])
+        with seq_lock:
+            state["vla"] = None
+            state["vla_model"] = None
+            note(state["vla_last"])
+            detail = dict(result) if isinstance(result, dict) else {}
+            detail.setdefault("status", "script_error")
+            detail.setdefault("actuations", None)
+            detail.setdefault("error", None if rc == 0 and result else state["vla_last"])
+            detail.setdefault("report", f"/root/openpi-xpu/client/outputs/{tag}/report.json")
+            detail.update(tag=tag, model=model_id, returncode=rc)
+            ok = rc == 0 and not detail["error"] and detail["status"] in ("time_limit", "done", "finished", "succeeded")
+            end_action(record, detail, ok)
 
 
 def estop():
@@ -301,63 +516,70 @@ def reader(p):
             ev = json.loads(line)
         except ValueError:
             continue
-        e = ev.get("event")
-        if e == "ready":
-            state["connected"] = True
-            state["last"] = "ready"
-            note("teleop ready")
-        elif e == "mode":
-            state["mode_ok"] = ev.get("ok")
-            note("robot mode " + ("OK (API, chassis enabled)" if ev.get("ok") else "NOT OK"))
-        elif e == "moving":
-            state["moving"] = f"{ev['kind']} {ev['dir']}"
-            if ev["kind"] == "path":
-                state["active_path"] = ev["dir"]
-                state["path_anchor"] = list(state["pose"])
-                note(f"path {ev['dir']}: {ev.get('length')} m, {ev.get('corners')} corner(s), "
-                     f"{ev.get('dwell', 0):.0f} s pause at each")
-            else:
-                note(f"moving: {ev['kind']} {ev['dir']}")
-        elif e == "path":
-            if ev.get("dwell"):
-                state["moving"] = f"path {ev['name']} - corner pause {ev['dwell']:.0f} s"
-                note(f"path {ev['name']}: at corner, pausing {ev['dwell']:.0f} s")
-            elif ev.get("resume"):
-                state["moving"] = f"path {ev['name']}"
-                note(f"path {ev['name']}: pause over, continuing")
-            else:
-                note(f"path {ev['name']}: waypoint {ev['waypoint']}/{ev['of']}")
-        elif e == "idle":
-            state["moving"] = None
-            if ev.get("kind") == "path":
-                state["active_path"] = None
-                path_result["why"] = ev.get("why")
-                path_done.set()
-            state["last"] = f"{ev.get('kind')} {ev.get('dir')}: {ev.get('why')}"
-            note(state["last"])
-        elif e == "error":
-            state["last"] = "error: " + ev.get("msg", "")
-            note(state["last"])
-            if seq["names"]:
-                path_result["why"] = state["last"]
-                path_done.set()
-        elif e == "pose":
-            x, y, th = ev["x"], ev["y"], ev["th"]
-            state["pose"] = [x, y, th]
-            if ev.get("reset"):
-                trail.clear()
-                state["epoch"] += 1
+        with seq_lock:
+            e = ev.get("event")
+            if e == "ready":
+                state["connected"] = True
+                state["last"] = "ready"
+                note("teleop ready")
+            elif e == "mode":
+                state["mode_ok"] = ev.get("ok")
+                note("robot mode " + ("OK (API, chassis enabled)" if ev.get("ok") else "NOT OK"))
+            elif e == "moving":
+                state["moving"] = f"{ev['kind']} {ev['dir']}"
+                if ev["kind"] == "path":
+                    state["active_path"] = ev["dir"]
+                    state["path_anchor"] = list(state["pose"])
+                    note(f"path {ev['dir']}: {ev.get('length')} m, {ev.get('corners')} corner(s), "
+                         f"{ev.get('dwell', 0):.0f} s pause at each")
+                else:
+                    note(f"moving: {ev['kind']} {ev['dir']}")
+            elif e == "path":
+                if ev.get("dwell"):
+                    state["moving"] = f"path {ev['name']} - corner pause {ev['dwell']:.0f} s"
+                    note(f"path {ev['name']}: at corner, pausing {ev['dwell']:.0f} s")
+                elif ev.get("resume"):
+                    state["moving"] = f"path {ev['name']}"
+                    note(f"path {ev['name']}: pause over, continuing")
+                else:
+                    note(f"path {ev['name']}: waypoint {ev['waypoint']}/{ev['of']}")
+            elif e == "idle":
+                state["moving"] = None
+                if ev.get("kind") == "path":
+                    state["active_path"] = None
+                    path_result["why"] = ev.get("why")
+                    path_done.set()
+                state["last"] = f"{ev.get('kind')} {ev.get('dir')}: {ev.get('why')}"
+                note(state["last"])
+            elif e == "error":
+                state["last"] = "error: " + ev.get("msg", "")
+                note(state["last"])
+                if seq["names"]:
+                    path_result["why"] = state["last"]
+                    path_done.set()
+            elif e == "pose":
+                x, y, th = ev["x"], ev["y"], ev["th"]
+                state["pose"] = [x, y, th]
+                if ev.get("reset"):
+                    trail.clear()
+                    state["epoch"] += 1
+                    if state["recording"]:
+                        state["rec_t0"] = time.monotonic()
                 if state["recording"]:
-                    state["rec_t0"] = time.monotonic()
-            if state["recording"]:
-                add_point(x, y, th)
-        elif e == "exit":
-            note("teleop exited")
-    state["connected"] = False
-    state["moving"] = None
-    if seq["names"]:
-        path_result["why"] = "teleop disconnected"
-        path_done.set()
+                    add_point(x, y, th)
+            elif e == "exit":
+                note("teleop exited")
+            motion_event(ev)
+    with seq_lock:
+        state["connected"] = False
+        state["moving"] = None
+        if seq["names"]:
+            path_result["why"] = "teleop disconnected"
+            path_done.set()
+        pending_motion[0] = None
+        action = current_action[0]
+        if action and action["type"] in ("chassis.step", "path.run"):
+            end_action(action, {"why": "teleop disconnected"})
 
 
 def teleop():
@@ -376,18 +598,172 @@ def teleop():
 
 
 def send(cmd, d=None):
+    if cmd in ("step", "hold", "path_cmd") and state["estop"]:
+        return False
     p = teleop()
     if cmd == "path_cmd":
         msg = {"cmd": "path", "name": d, "points": paths[d]["points"], "dwell": 0}   # no stops at corners
     else:
         msg = {"cmd": cmd} if d is None else {"cmd": cmd, "dir": d}
+    if cmd in ("step", "hold", "path_cmd"):
+        pending_motion[0] = (cmd, d)
     try:
         p.stdin.write(json.dumps(msg) + "\n")
         p.stdin.flush()
         return True
     except (BrokenPipeError, OSError):
+        pending_motion[0] = None
         return False
 
+
+def motion_event(ev):
+    event = ev.get("event")
+    if event == "moving":
+        pending_motion[0] = None
+    if event not in ("idle", "error"):
+        return
+    pending_motion[0] = None
+    action = current_action[0]
+    if not action or action["type"] not in ("chassis.step", "path.run"):
+        return
+    if event == "idle":
+        expected = "step" if action["type"] == "chassis.step" else "path"
+        if ev.get("kind") != expected:
+            return
+    why = ev.get("why") if event == "idle" else ev.get("msg", "teleop error")
+    end_action(action, {"why": why, "teleop": ev}, why in ("done", "step done", "path done"))
+
+
+def motion_watchdog(action, timeout):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with seq_lock:
+            if current_action[0] is not action:
+                return
+        time.sleep(0.1)
+    with seq_lock:
+        if current_action[0] is action:
+            send("stop")
+            end_action(action, {"why": "motion timeout"}, code="TIMEOUT")
+
+
+ACTION_PARAMS = {
+    "chassis.step": {"direction": list(DIRS)},
+    "path.run": {"name": "loaded path name"},
+    "path.run_all": {},
+    "route.run": {"route": list(ROUTES)},
+    "arm.pose": {"pose": list(ARM_TIME)},
+    "vla.grasp": {},
+    "odom.reset": {},
+    "mission.run": {"attempts": "optional integer", "prompt": "optional string", "port": "optional integer"},
+}
+
+
+def start_action(body):
+    if not isinstance(body, dict) or set(body) - {"type", "params"}:
+        raise APIError(400, "BAD_REQUEST", "expected {type, params}")
+    kind, params = body.get("type"), body.get("params", {})
+    if not isinstance(kind, str) or kind not in ACTION_PARAMS or not isinstance(params, dict):
+        raise APIError(400, "BAD_REQUEST", "unknown type or invalid params")
+    spec = ACTION_PARAMS[kind]
+    if kind == "mission.run":
+        merged = dict(params)
+        sel = VLA_MODELS[state["vla_selected"]]
+        if "prompt" not in merged and "PROMPT" not in os.environ:
+            merged["prompt"] = sel["prompt"]
+        if "port" not in merged and "MISSION_PORT" not in os.environ and "POLICY_PORT" not in os.environ:
+            merged["port"] = sel["port"]
+        try:
+            cfg = mission_module.options(merged)
+        except ValueError as exc:
+            raise APIError(400, "BAD_REQUEST", str(exc)) from exc
+    elif set(params) != set(spec) or any(not isinstance(v, str) for v in params.values()):
+        raise APIError(400, "BAD_REQUEST", "required parameters: " + ", ".join(spec))
+    for key, allowed in spec.items():
+        if isinstance(allowed, list) and params[key] not in allowed:
+            code = "UNKNOWN_ROUTE" if key == "route" else "BAD_REQUEST"
+            raise APIError(400, code, f"invalid {key}: {params[key]}")
+    names = None
+    if kind == "path.run":
+        if params["name"] not in paths:
+            raise APIError(400, "UNKNOWN_PATH", "unknown path: " + params["name"])
+    elif kind in ("route.run", "path.run_all"):
+        names = ROUTES[params["route"]][1][:] if kind == "route.run" else sorted(paths)
+        missing = [n for n in names if n not in paths]
+        if not names or missing:
+            raise APIError(400, "UNKNOWN_PATH", "missing paths: " + ", ".join(missing or ["no paths loaded"]))
+    if state["estop"]:
+        raise APIError(409, "ESTOP_ACTIVE", "emergency stop is in progress")
+    if busy():
+        raise APIError(409, "BUSY", "wait until the robot is still")
+    if not state["connected"]:
+        raise APIError(503, "NOT_CONNECTED", "robot teleop is not connected")
+    if kind == "mission.run":
+        try:
+            mission.prepare(cfg)
+        except mission_module.MissionAborted as exc:
+            raise APIError(409, "ESTOP_ACTIVE", "emergency stop during preflight") from exc
+        except mission_module.MissionFailure as exc:
+            raise APIError(409, "MISSION_PREFLIGHT_FAILED", str(exc)) from exc
+    if kind == "vla.grasp":
+        check_policy()
+    # E-STOP bypasses seq_lock and may arrive during the policy check.
+    if state["estop"] or (kind == "mission.run" and mission.cancel.is_set()):
+        if kind == "mission.run" and mission.monitor:
+            mission.monitor.close()
+        raise APIError(409, "ESTOP_ACTIVE", "emergency stop is in progress")
+    action = {"id": uuid.uuid4().hex[:12], "type": kind, "params": dict(params),
+              "status": "running", "created_at": timestamp(), "ended_at": None,
+              "result": None, "error": None}
+    terminal_claims[action["id"]] = action
+    log_claims[action["id"]] = action
+    actions.appendleft(action)
+    current_action[0] = action
+    try:
+        if kind == "mission.run":
+            mission.start(cfg, action)
+        elif kind in ("route.run", "path.run_all"):
+            start_sequence(names, params.get("route"), action)
+        elif kind == "arm.pose":
+            start_arm(params["pose"], action)
+        elif kind == "vla.grasp":
+            start_vla(action)
+        else:
+            cmd, arg = ("step", params["direction"]) if kind == "chassis.step" else (
+                ("path_cmd", params["name"]) if kind == "path.run" else ("reset_pose", None))
+            if not send(cmd, arg):
+                end_action(action, {"why": "teleop disconnected"})
+            elif kind == "odom.reset":
+                end_action(action, {"why": "reset_pose sent"}, True)
+            else:
+                deadline = 3 * paths[arg]["length"] / 0.10 + 30 if kind == "path.run" else 15
+                threading.Thread(target=motion_watchdog, args=(action, deadline), daemon=True).start()
+    except Exception as e:  # a failed launch still has an auditable action record
+        end_action(action, {"why": str(e)}, code="SCRIPT_ERROR")
+    return {"action_id": action["id"], "action": copy.deepcopy(action)}
+
+
+def api_state():
+    x, y, th = state["pose"]
+    pause = seq["pause_until"]
+    return {"robot": {"connected": state["connected"], "api_mode": state["mode_ok"]},
+            "chassis": {"pose": {"x_m": x, "y_m": y, "heading_deg": th * 57.295779513},
+                        "moving": state["moving"]},
+            "arms": {"busy": bool(state["arm"]), "last": state["arm_last"]},
+            "vla": {"running": bool(state["vla"]), "last": state["vla_last"]},
+            "sequence": {"names": list(seq["names"]), "index": seq["i"], "route": seq["route"],
+                         "pause_left_s": max(0, pause - time.time()) if pause else 0},
+            "estop": {"active": state["estop"], "last": state["estop_last"]},
+            "mission": mission.snapshot(),
+            "current_action": copy.deepcopy(current_action[0])}
+
+
+class _Host:
+    def __getattr__(self, name):
+        return globals()[name]
+
+
+mission = mission_module.Mission(sys.modules.get(__name__) or _Host())
 
 PAGE = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -465,6 +841,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%}
 pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;height:200px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
 [hidden]{display:none!important}
 @media(max-width:420px){.bar{padding:12px 16px;gap:8px 10px}.app{padding:20px 12px 28px;gap:16px}.body{padding:18px 16px}.identity{gap:6px 8px}summary{padding:14px 16px}.estop{padding:10px 14px}.hint{font-size:11px}}
+.mission-current{font-weight:700;color:var(--accent);background:var(--grid);border-radius:6px}
 </style></head><body>
 <header><div class="bar">
   <div class="identity"><h1>TA2 遥控</h1><span id="connection" class="connection" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-text">连接中…</span></span><span id="mode" class="badge">模式未知</span></div>
@@ -473,15 +850,25 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
 </div></header>
 <main class="app">
   <section class="card"><div class="body">
+    <h2>全流程</h2>
+    <p id="missionmodel" class="status-line">当前模型：读取中…</p>
+    <button id="missionrun" class="primary" disabled>开始全流程</button>
+    <ol id="missionsteps"><li data-step="preflight">预检</li><li data-step="g2r">绿→红</li><li data-step="grasp">抓取 0/5</li><li data-step="stow">收臂</li><li data-step="r2g">红→绿</li><li data-step="place">放下</li></ol>
+    <p id="missionstatus" class="status-line" role="status">尚未运行</p>
+  </div></section>
+  <section class="card"><div class="body">
     <h2>VLA 抓取</h2>
-    <button id="vlarun" class="primary" title="复位、取帧后执行沙包抓取" disabled>开始抓取（60 秒）</button>
+    <p class="status-line">当前模型：<strong id="vlamodel">读取中…</strong></p>
+    <p><button id="modelsbtn" type="button" class="small" onclick="location.href='/models'">选择 / 切换模型 →</button></p>
+    <p id="vlaconfig" class="status-line">读取模型配置中…</p>
+    <button id="vlarun" class="primary" title="回到起始姿态并张开夹爪，取帧后使用当前选定模型抓取" disabled>开始抓取（60 秒）</button>
     <div id="vla-progress" hidden>
       <div class="progress-row"><span id="vlaelapsed" role="status">已运行 0 / 60 s</span><button id="vlastop" class="small">停止</button></div>
       <progress id="vlaprogress" max="60" value="0" aria-label="抓取运行进度" aria-describedby="vlaelapsed"></progress>
     </div>
     <p class="status-line">上次：<span id="vlast">尚未运行</span></p>
     <div class="arm-section">
-      <div class="arm-controls"><h3>手臂</h3><button id="armstart" class="small" title="回到训练起始姿态，夹爪张开，约 10 秒" disabled>起始姿态</button><button id="armraise" class="small" title="抬起手臂，约 8 秒" disabled>抬起</button><button id="armlower" class="small" title="返回抬起前的姿态，约 15 秒" disabled>放下</button></div>
+      <div class="arm-controls"><h3>手臂</h3><button id="armstart" class="small" title="回到训练起始姿态，夹爪张开，约 10 秒" disabled>起始姿态</button><button id="armstarthold" class="small" title="回到训练起始姿态，正在夹着的夹爪保持夹紧（不松开），约 10 秒" disabled>起始姿态·保持夹爪</button><button id="armdown5" class="small" title="右臂末端竖直下降 5 cm，朝向不变，夹着的夹爪保持夹紧；每次按当前位置重新计算，最多降到末端 z = −0.40 m（不足 5 cm 时只降到下限），约 8 秒" disabled>右臂下降 5 cm</button><button id="armopenright" class="small" title="张开右夹爪（全力张开），手臂保持当前姿态不动；夹着的东西会掉下来，约 3 秒" disabled>松开右爪</button><button id="armcloseright" class="small" title="闭合右夹爪（全力夹紧），手臂保持当前姿态不动，约 3 秒；之后保持夹紧" disabled>闭合右爪</button><button id="armraise" class="small" title="抬起手臂，约 8 秒" disabled>抬起</button><button id="armlower" class="small" title="返回抬起前的姿态，约 15 秒" disabled>放下</button></div>
       <p id="armst" class="status-line">尚未移动</p>
     </div>
   </div></section>
@@ -548,7 +935,7 @@ const doEstop=()=>{if(estopBtn.disabled)return;end();post('/estop')};estopBtn.on
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();doEstop()}});
 const modeEl=document.getElementById('mode'),connectionEl=document.getElementById('connection'),connectionText=document.getElementById('connection-text');
 const directions={forward:'前进',back:'后退',left:'向左',right:'向右',ccw:'逆时针',cw:'顺时针'};
-const armActions={start:'起始姿态',raise:'抬起',lower:'放下'};
+const armActions={start:'起始姿态',start_hold:'起始姿态（保持夹爪）',down5:'右臂下降 5 cm',open_right:'松开右爪',close_right:'闭合右爪',open_left:'松开左爪',close_left:'闭合左爪',raise:'抬起',lower:'放下'};
 function uiText(value){
   let t=String(value??'');
   const phrases=[['route running: only E-STOP is accepted','路线执行中，仅接受急停'],
@@ -567,7 +954,7 @@ function uiText(value){
     ['trail is empty','轨迹为空'],['starting','正在启动'],['ready','就绪'],['stopped','已停止'],
     ['released','已松开'],['release','松开'],['timeout','超时'],['busy','忙碌中'],['done','已完成'],['error','错误']];
   for(const [from,to] of phrases)t=t.split(from).join(to);
-  t=t.replace(/\barms (start|raise|lower):/g,(_,a)=>'手臂'+armActions[a]+'：')
+  t=t.replace(/\barms (start_hold|start|down5|open_right|close_right|open_left|close_left|raise|lower):/g,(_,a)=>'手臂'+armActions[a]+'：')
     .replace(/\b(step|hold) (forward|back|left|right|ccw|cw)\b/g,(_,k,d)=>(k==='step'?'点按':'持续')+directions[d])
     .replace(/\bpath /g,'路径 ').replace(/\bsteps\b/g,'步').replace(/\bNone\b/g,'无');
   return t;
@@ -616,10 +1003,28 @@ const armRaise=document.getElementById('armraise'),armLower=document.getElementB
 armRaise.onclick=async()=>{const r=await post('/arm/raise');if(r.error)st.textContent=uiText(r.error)};
 armLower.onclick=async()=>{const r=await post('/arm/lower');if(r.error)st.textContent=uiText(r.error)};
 armStart.onclick=async()=>{const r=await post('/arm/start');if(r.error)st.textContent=uiText(r.error)};
+const armCloseRight=document.getElementById('armcloseright');armCloseRight.onclick=async()=>{const r=await post('/arm/close_right');if(r.error)st.textContent=r.error};
+const armOpenRight=document.getElementById('armopenright');armOpenRight.onclick=async()=>{const r=await post('/arm/open_right');if(r.error)st.textContent=r.error};
+const armDown5=document.getElementById('armdown5');armDown5.onclick=async()=>{const r=await post('/arm/down5');if(r.error)st.textContent=r.error};
+const armStartHold=document.getElementById('armstarthold');armStartHold.onclick=async()=>{const r=await post('/arm/start_hold');if(r.error)st.textContent=r.error};
 const vlaBtn=document.getElementById('vlarun'),vlaSt=document.getElementById('vlast');
 const routeBtns=[...document.querySelectorAll('button[data-route]')],routeSt=document.getElementById('routest');
 const routeLabels={g2r:'绿 → 红',r2g:'红 → 绿'};
 routeBtns.forEach(b=>b.onclick=async()=>{const r=await post('/route/'+b.dataset.route);if(r.error)routeSt.textContent=uiText(r.error)});
+const missionBtn=document.getElementById('missionrun'),missionSt=document.getElementById('missionstatus');
+missionBtn.onclick=async()=>{missionBtn.disabled=true;try{const r=await post('/mission/run');if(r.error)missionSt.textContent=uiText(typeof r.error==='string'?r.error:r.error.message)}catch(e){missionSt.textContent='无法开始任务'}};
+function updateMission(s){
+  const m=s.mission||{},active=!!m.active;
+  if(s.vla_selection)document.getElementById('missionmodel').textContent='当前模型：'+s.vla_selection.name+'（'+s.vla_selection.prompt+'）';
+  missionBtn.disabled=active||!s.connected||s.mode_ok!==true||!!s.estop||!!s.moving||s.seq.length>0||!!s.arm||!!s.vla;
+  document.querySelectorAll('#missionsteps li').forEach(el=>{
+    el.classList.toggle('mission-current',el.dataset.step===m.step);
+    if(el.dataset.step==='grasp')el.textContent='抓取 '+(m.attempt||0)+'/'+(m.attempts||5);
+  });
+  const results={idle:'尚未运行',running:'运行中',succeeded:'成功',failed:'失败',aborted:'已急停中止'};
+  missionSt.textContent=(results[m.status]||'尚未运行')+(m.hand?' · 抓取手：'+(m.hand==='left'?'左手':'右手'):'')+(m.pause_left_s>0?' · 停留 '+Math.ceil(m.pause_left_s)+' 秒':'')+(m.result?' · '+m.result:'')+(active?' · 仅接受急停':'');
+  if(active)document.querySelectorAll('button').forEach(b=>{if(b.id!=='estop')b.disabled=true});
+}
 function updateRoute(s){
   routeBtns.forEach(b=>b.disabled=!!s.moving||s.seq.length>0||!!s.arm||!!s.vla||!!s.estop||!s.connected);
   document.getElementById('stop').disabled=!!s.route;
@@ -628,14 +1033,15 @@ function updateRoute(s){
   routeSt.textContent=s.pause_left>0?title+'停留中，还剩 '+Math.ceil(s.pause_left)+' 秒，然后执行 '+s.seq[i+1]:
     i<0?title+'准备中…':title+'执行 '+s.seq[i]+'（'+(i+1)+'/'+s.seq.length+'）';
 }
-vlaBtn.onclick=async()=>{const r=await post('/vla');if(r.error)st.textContent=uiText(r.error)};
+let selectedVlaId=null,vlaSeconds=60;
+vlaBtn.onclick=async()=>{if(!selectedVlaId)return;const r=await post('/vla/'+encodeURIComponent(selectedVlaId));if(r.error)st.textContent=uiText(r.error)};
 const vlaProgress=document.getElementById('vla-progress'),vlaMeter=document.getElementById('vlaprogress'),vlaElapsed=document.getElementById('vlaelapsed');
 let vlaStarted=null;
 function updateVlaProgress(){
   if(vlaStarted===null)return;
   const elapsed=Math.floor((performance.now()-vlaStarted)/1000);
-  vlaMeter.value=Math.min(60,elapsed);
-  vlaElapsed.textContent=elapsed>=60?'收尾中…':'已运行 '+elapsed+' / 60 s';
+  vlaMeter.value=Math.min(vlaSeconds,elapsed);
+  vlaElapsed.textContent=elapsed>=vlaSeconds?'收尾中…':'已运行 '+elapsed+' / '+vlaSeconds+' s';
 }
 setInterval(updateVlaProgress,200);
 document.getElementById('runall').onclick=async()=>{const r=await post('/paths/runall');if(r.error)st.textContent=uiText(r.error)};
@@ -711,17 +1117,27 @@ async function poll(){try{
   estopBtn.disabled=!!s.estop;estopBtn.textContent=s.estop?'急停中…':'急停';
   armSt.textContent=s.arm?((armActions[s.arm]||s.arm)+'进行中…'):uiText(s.arm_last);
   const still=!s.moving&&!s.seq.length&&!s.arm&&!s.vla;
+  const model=s.vla_running||s.vla_selection;
+  if(s.vla_selection){
+    selectedVlaId=s.vla_selection.id;vlaSeconds=model.seconds;vlaMeter.max=vlaSeconds;
+    document.getElementById('vlamodel').textContent=model.name;
+    document.getElementById('vlaconfig').textContent=model.prompt+' · '+model.seconds+' 秒 · 速度上限 '+model.speed+' rad/s';
+    vlaBtn.textContent='开始抓取（'+s.vla_selection.seconds+' 秒）';
+    document.getElementById('modelsbtn').disabled=!still||!!s.estop;
+  }
   vlaSt.textContent=uiText(s.vla_last);
   if(s.vla){if(vlaStarted===null)vlaStarted=performance.now()}else vlaStarted=null;
   vlaProgress.hidden=!s.vla;updateVlaProgress();
   updateRoute(s);
-  armRaise.disabled=!still;armLower.disabled=!still;armStart.disabled=!still;vlaBtn.disabled=!still||!!s.estop;
+  armRaise.disabled=!still;armLower.disabled=!still;armStart.disabled=!still;armStartHold.disabled=!still;armDown5.disabled=!still;armOpenRight.disabled=!still;armCloseRight.disabled=!still;vlaBtn.disabled=!still||!!s.estop||!s.connected;
+  if(s.mission&&s.mission.active)t="全流程运行中，仅接受急停";
   st.textContent=t;st.title=t;
   const busyStep=s.moving&&(s.moving.startsWith('step')||s.moving.startsWith('path'))||s.seq.length>0||!!s.arm;
   const pathBusy=!!s.active_path||s.seq.length>0||!!s.arm;
   document.querySelectorAll('.prow button').forEach(b=>b.disabled=pathBusy);
   document.getElementById('runall').disabled=pathBusy;
   moves.forEach(x=>x.disabled=!press&&(busyStep||!s.connected));
+  updateMission(s);
   lg.textContent=s.log.join('\n');lg.scrollTop=lg.scrollHeight;draw();
 }catch(e){connectionText.textContent='B70 不可达';connectionEl.className='connection';st.textContent='无法获取机器人状态';st.title=st.textContent;routeBtns.forEach(b=>b.disabled=true);if(!press)moves.forEach(x=>x.disabled=true)}}
 poll();setInterval(poll,300);
@@ -730,6 +1146,8 @@ poll();setInterval(poll,300);
 
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="application/json"):
+        if self.path.startswith("/api/v1/") and code == 503 and body == {"ok": False}:
+            body = {"error": {"code": "TELEOP_DISCONNECTED", "message": "teleop disconnected"}}
         data = body.encode() if isinstance(body, str) else json.dumps(body).encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype + "; charset=utf-8")
@@ -737,10 +1155,82 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def api_error(self, error):
+        return self._send(error.status, {"error": {"code": error.code, "message": error.message}})
+
+    def api_GET(self, path, query):
+        with seq_lock:
+            if path == "/api/v1/health":
+                action = current_action[0]
+                return self._send(200, {"ok": True, "connected": state["connected"],
+                                       "api_mode": state["mode_ok"], "estop_active": state["estop"],
+                                       "busy": busy(), "current_action": action["id"] if action else None})
+            if path == "/api/v1/state":
+                return self._send(200, api_state())
+            if path == "/api/v1/capabilities":
+                sel = VLA_MODELS[state["vla_selected"]]
+                return self._send(200, {"actions": ACTION_PARAMS, "paths": sorted(paths),
+                                       "routes": [{"id": key, "name": name, "paths": names}
+                                                  for key, (name, names) in ROUTES.items()],
+                                       "arm_poses": list(ARM_TIME),
+                                       "vla": {"seconds": sel["seconds"], "max_rad_s": sel["speed"],
+                                               "prompt": sel["prompt"], "model": sel["id"]}})
+            if path == "/api/v1/actions":
+                try:
+                    limit = int(parse_qs(query).get("limit", ["20"])[0])
+                    if not 1 <= limit <= 200:
+                        raise ValueError()
+                except ValueError:
+                    raise APIError(400, "BAD_REQUEST", "limit must be an integer from 1 to 200")
+                return self._send(200, {"actions": copy.deepcopy(list(actions)[:limit])})
+            parts = path.strip("/").split("/")
+            if len(parts) == 4 and parts[:3] == ["api", "v1", "actions"]:
+                return self._send(200, copy.deepcopy(self.find_action(parts[3])))
+            raise APIError(404, "NOT_FOUND", "endpoint not found")
+
+    def find_action(self, aid):
+        for action in actions:
+            if action["id"] == aid:
+                return action
+        raise APIError(404, "NOT_FOUND", "action not found: " + aid)
+
+    def api_POST(self, path):
+        if path == "/api/v1/actions":
+            try:
+                size = int(self.headers.get("Content-Length", "0"))
+                if not 0 < size <= 65536:
+                    raise ValueError("body must contain 1 to 65536 bytes")
+                body = json.loads(self.rfile.read(size))
+            except (ValueError, UnicodeError) as e:
+                raise APIError(400, "BAD_REQUEST", "invalid JSON body: " + str(e))
+            return self._send(202, start_action(body))
+        if path in ("/api/v1/stop", "/api/v1/estop"):
+            return self._do_POST(path.rsplit("/", 1)[1])
+        parts = path.strip("/").split("/")
+        if len(parts) == 5 and parts[:3] == ["api", "v1", "actions"] and parts[4] == "cancel":
+            action = self.find_action(parts[3])
+            if action["status"] != "running" or current_action[0] is not action:
+                raise APIError(409, "NOT_RUNNING", "action is no longer running")
+            return self._do_POST("stop")
+        raise APIError(404, "NOT_FOUND", "endpoint not found")
+
     def do_GET(self):
         path, _, query = self.path.partition("?")
+        if path == "/api/v1" or path.startswith("/api/v1/"):
+            try:
+                return self.api_GET(unquote(path), query)
+            except APIError as e:
+                return self.api_error(e)
         if path == "/":
             self._send(200, PAGE, "text/html")
+        elif path in ("/models", "/models/"):
+            with open(os.path.join(os.path.dirname(__file__), "web_models.html")) as model_page:
+                self._send(200, model_page.read(), "text/html")
+        elif path == "/api/models":
+            services = model_services()
+            with seq_lock:
+                self._send(200, {"models": services, "selected": state["vla_selected"],
+                                 "busy": bool(busy() or state["estop"])})
         elif path == "/trail.csv":
             data = trail_csv().encode()
             self.send_response(200)
@@ -763,24 +1253,57 @@ class Handler(BaseHTTPRequestHandler):
                 pause_until = seq["pause_until"]
                 sequence = {"seq": seq["names"], "seq_i": seq["i"], "route": seq["route"],
                             "pause_left": max(0, pause_until - time.time()) if pause_until else 0,
-                            "route_last": state["route_last"]}
+                            "route_last": state["route_last"],
+                            "vla_selection": public_model(state["vla_selected"]),
+                            "vla_running": public_model(state["vla_model"]) if state["vla_model"] else None}
             self._send(200, {**state, "log": list(log), "trail_from": since, "trail": trail[since:],
-                             **sequence, "path_names": sorted(paths)})
+                             **sequence, "mission": mission.snapshot(), "path_names": sorted(paths)})
         else:
             self._send(404, {"error": "not found"})
 
     def do_POST(self):
-        # Check and dispatch atomically: a delayed STOP/release from the phone must
-        # never slip past this gate as a route is being started.
-        if self.path.strip("/") == "estop":   # E-STOP never waits for the lock (an upload may hold it)
-            return self._do_POST()
-        with seq_lock:
-            if seq["route"]:
-                return self._send(409, {"error": "route running: only E-STOP is accepted"})
-            return self._do_POST()
+        path = unquote(urlsplit(self.path).path).rstrip("/")
+        api = path == "/api/v1" or path.startswith("/api/v1/")
+        try:
+            # Both E-STOP endpoints bypass command locks and route gates.
+            if path in ("/estop", "/api/v1/estop"):
+                return self._do_POST("estop")
+            with seq_lock:
+                if mission.active:
+                    if api:
+                        raise APIError(409, "MISSION_ESTOP_ONLY", "mission running: only E-STOP is accepted")
+                    return self._send(409, {"error": "mission running: only E-STOP is accepted", "code": "MISSION_ESTOP_ONLY"})
+                if seq["route"]:
+                    if api:
+                        raise APIError(409, "ROUTE_ESTOP_ONLY", "route running: only E-STOP is accepted")
+                    return self._send(409, {"error": "route running: only E-STOP is accepted"})
+                if api:
+                    return self.api_POST(path)
+                if current_action[0] and path not in ("/stop", "/release"):
+                    return self._send(409, {"error": "busy: API action running"})
+                return self._do_POST()
+        except APIError as e:
+            return self.api_error(e)
+        except Exception as e:
+            if not api:
+                raise
+            note(f"API request error: {e}")
+            return self.api_error(APIError(500, "INTERNAL_ERROR", str(e)))
 
-    def _do_POST(self):
-        parts = self.path.strip("/").split("/")
+    def _do_POST(self, command=None):
+        parts = (command or self.path.strip("/")).split("/")
+        if parts == ["mission", "run"]:
+            return self._send(202, start_action({"type": "mission.run"}))
+        if parts[:2] == ["models", "select"]:
+            if len(parts) != 3 or parts[2] not in VLA_MODELS:
+                return self._send(400, {"error": "未知模型，请刷新模型列表"})
+            if busy() or state["estop"]:
+                return self._send(409, {"error": "机器人正在运行，请结束当前任务后切换模型"})
+            try:
+                select_model(parts[2])
+            except OSError as exc:
+                return self._send(500, {"error": f"保存模型选择失败：{exc}"})
+            return self._send(200, {"ok": True, "selected": parts[2]})
         if parts[0] == "route":
             if len(parts) != 2 or parts[1] not in ROUTES:
                 return self._send(400, {"error": "unknown route"})
@@ -790,36 +1313,37 @@ class Handler(BaseHTTPRequestHandler):
             if missing:
                 return self._send(400, {"error": "missing paths: " + ", ".join(missing)})
             with seq_lock:
-                if state["moving"] or seq["names"] or state["arm"] or state["vla"] or state["estop"]:
+                if pending_motion[0] or state["moving"] or seq["names"] or state["arm"] or state["vla"] or state["estop"]:
                     return self._send(409, {"error": "busy: wait until the robot is still"})
-                last_poll[0] = time.monotonic()
-                seq.update(names=names, i=-1, abort=False, route=route, pause_until=None)
-                threading.Thread(target=run_sequence, args=(names,), daemon=True).start()
+                start_sequence(names, route)
             return self._send(200, {"ok": True})
         if parts[0] in ("step", "hold", "paths") and (state["arm"] or state["vla"]) and parts[:2] != ["paths", "upload"]:
             return self._send(409, {"error": "arms are moving"})
         if parts[0] == "vla":
-            if state["arm"] or state["moving"] or seq["names"] or state["vla"] or state["estop"]:
+            if len(parts) > 2 or (len(parts) == 2 and parts[1] not in VLA_MODELS):
+                return self._send(400, {"error": "未知模型，请刷新模型列表"})
+            model_id = parts[1] if len(parts) == 2 else state["vla_selected"]
+            if model_id != state["vla_selected"]:
+                return self._send(409, {"error": "选用模型已在其他页面更改，请刷新后再开始"})
+            if busy() or state["estop"]:
                 return self._send(409, {"error": "busy: wait until the robot is still"})
-            up = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", POLICY_CONTAINER],
-                                capture_output=True, text=True).stdout.strip()
-            if up != "true" and not os.environ.get("VLA_CMD"):
-                return self._send(503, {"error": f"policy server {POLICY_CONTAINER} is not running"})
-            state["vla"] = time.strftime("vla_web_%Y%m%d_%H%M%S")
-            note(f"VLA grasp started: {state['vla']} ({VLA_SECONDS} s, max {VLA_SPEED} rad/s)")
-            threading.Thread(target=run_vla, daemon=True).start()
-            return self._send(200, {"ok": True, "tag": state["vla"]})
+            try:
+                check_policy(model_id=model_id)
+            except APIError as e:
+                return self._send(e.status, {"error": e.message})
+            tag = start_vla(model_id=model_id)
+            return self._send(200, {"ok": True, "tag": tag, "model": model_id})
         if parts[0] == "arm" and len(parts) == 2 and parts[1] in ARM_TIME:
-            if state["arm"] or state["moving"] or seq["names"] or state["vla"]:
+            if pending_motion[0] or state["arm"] or state["moving"] or seq["names"] or state["vla"]:
                 return self._send(409, {"error": "busy: wait until the robot is still"})
-            state["arm"] = parts[1]
-            note(f"arms: {parts[1]} ({ARM_TIME[parts[1]]} s)")
-            threading.Thread(target=run_arm, args=(parts[1],), daemon=True).start()
+            start_arm(parts[1])
             return self._send(200, {"ok": True})
         if parts[0] in ("step", "hold") and len(parts) == 2:
             d = parts[1]
             if d not in DIRS:
                 return self._send(400, {"error": "bad direction"})
+            if pending_motion[0] and pending_motion[0] != ("hold", d):
+                return self._send(409, {"error": "busy"})
             if parts[0] == "step":
                 state["clicks"] += 1
             elif state["moving"] != f"hold {d}":
@@ -842,7 +1366,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(400, {"error": f"cannot read file: {e}"})
                 note(f"loaded path {name}: {paths[name]['length']} m")
                 return self._send(200, {"ok": True, "name": name})
-            if state["moving"] or seq["names"]:
+            if pending_motion[0] or state["moving"] or seq["names"]:
                 return self._send(409, {"error": "busy"})
             if parts[1] == "run" and len(parts) == 3 and parts[2] in paths:
                 last_poll[0] = time.monotonic()
@@ -850,12 +1374,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200 if ok else 503, {"ok": ok})
             if parts[1] == "runall" and paths:
                 with seq_lock:
-                    if state["moving"] or seq["names"]:
+                    if pending_motion[0] or state["moving"] or seq["names"]:
                         return self._send(409, {"error": "busy"})
-                    last_poll[0] = time.monotonic()
-                    names = sorted(paths)
-                    seq.update(names=names, i=-1, abort=False, route=None, pause_until=None)
-                    threading.Thread(target=run_sequence, args=(names,), daemon=True).start()
+                    start_sequence(sorted(paths))
                 return self._send(200, {"ok": True})
             self._send(400, {"error": "unknown path"})
         elif parts[0] == "reset":
@@ -883,14 +1404,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True, "file": path})
             self._send(200, {"ok": True})
         elif parts[0] == "estop":
+            already_stopping = state["estop"]
+            state["estop"] = True
+            seq["abort"] = True
+            mission.abort()
+            interrupt_action("ESTOP")
             note("E-STOP pressed")
-            if not state["estop"]:
-                state["estop"] = True
+            if not already_stopping:
                 seq["abort"] = True               # plain assignment, no lock: E-STOP must not block
                 threading.Thread(target=estop, daemon=True).start()
             self._send(200, {"ok": True})
         elif parts[0] in ("release", "stop"):
             if parts[0] == "stop":
+                interrupt_action("STOPPED")
                 with seq_lock:
                     seq["abort"] = True
                     ok = send("stop")
@@ -915,6 +1441,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     print(f"TA2 chassis web remote on http://0.0.0.0:{PORT}", flush=True)
     load_path_dir()
+    threading.Thread(target=action_log_loop, daemon=True).start()
     threading.Thread(target=teleop, daemon=True).start()   # connect at startup
     threading.Thread(target=alive_loop, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

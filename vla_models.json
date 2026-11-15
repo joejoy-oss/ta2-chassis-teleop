@@ -1,0 +1,27 @@
+{
+  "default": "grasp_v3_step5000",
+  "models": [
+    {
+      "id": "grasp_v3_step5000",
+      "name": "新模型 v3 · 5000 步",
+      "training": "122 段演示 · 11 月 15 日",
+      "prompt": "抓取红色沙包",
+      "port": 8002,
+      "container": "grasp-v3-step5000-policy",
+      "command": ["/root/vla_grasp_v3_step5000.sh"],
+      "seconds": 60,
+      "speed": 0.25
+    },
+    {
+      "id": "sandbag_v2_step4999",
+      "name": "上午模型 v2 · 5000 步（检查点 4999）",
+      "training": "36 段演示 · 11 月 14 日",
+      "prompt": "抓取沙包",
+      "port": 8000,
+      "container": "sandbag-step4999-policy",
+      "command": ["/root/vla_grasp_v2_step4999.sh"],
+      "seconds": 60,
+      "speed": 0.25
+    }
+  ]
+}

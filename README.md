@@ -47,11 +47,14 @@ Single column, Chinese labels, works on a phone. From top to bottom:
 
 - **Top bar** (always visible): connection, API mode, current activity, and the only red button,
   **急停 (E-STOP)**; the **Esc** key does the same. See Safety below.
-- **VLA 抓取**: the big button 开始抓取（60 秒） runs `vla/vla_run.sh` for 60 s at max 0.5 rad/s with the
-  prompt 抓取沙包 (Start pose first, then the policy). While it runs the page shows a progress bar and a
-  停止 button; the line below shows the last result (steps and end reason). It needs the policy server
-  container (`sandbag-step4999-policy`) running and refuses to start while anything else moves.
-  Below it, small arm buttons: 起始姿态 (training start pose), 抬起 (raise), 放下 (lower).
+- **VLA 抓取**: the big button 开始抓取（60 秒） runs the currently selected model in `vla_models.json`
+  for 60 s at max 0.25 rad/s (Start pose with grippers open first). **选择 / 切换模型** opens `/models`,
+  listing deployed models (`grasp_v3_step5000` on port 8002 with prompt 抓取红色沙包, and morning
+  `sandbag_v2_step4999` on port 8000 with prompt 抓取沙包) and their container states. Selection is saved
+  in `/root/ta2_vla_selected.json` without starting motion and is also used as the default model for
+  **开始全流程** unless overridden via API parameters or environment variables. Switching is refused during
+  motion. Below it, small arm buttons: 起始姿态 (training start pose), 起始姿态·保持夹爪, 右臂下降 5 cm,
+  松开右爪, 闭合右爪, 抬起 (raise), 放下 (lower).
 - **路线**: 绿 → 红 runs `001` → pause 10 s → `002`; 红 → 绿 runs `003` → pause 10 s → `004`.
   The card shows the current path, pause countdown and last result.
   Place the robot at the start with the recorded heading first. Routes use Run all's continuous corner
@@ -152,3 +155,58 @@ open (`/api/{arm}_gripper/cmd` 0.0 = full opening force, sent with every joint c
 136 of 137 training episodes (sandbag_trial_20261114_v1, grasp_red_sandbag) the gripper starts fully open
 (~1.05 rad, the dataset maximum) with trigger 0.0. The base position is not set by it: put the base where it
 stood during data collection.
+
+
+## 全流程：绿→红→抓取→红→绿→放下
+
+网页最上方「开始全流程」和 API `mission.run` 共用 `mission.py`、序列锁及急停。
+页面显示当前步骤、抓取次数、抓取手、到达停留倒计时和结果。运行及中止清理期间仅接受急停；
+软停、cancel 和所有其他 POST 均拒绝（`MISSION_ESTOP_ONLY`）。接口和客户端示例见 [docs/API.md](docs/API.md)。
+
+预检确认底盘连接/API 模式、策略容器、四段路线、双臂反馈新鲜、当前双爪都未夹持后，执行：
+
+1. 路线 001→002（PATH_PAUSE=10 秒），到红区再停 ARRIVE_PAUSE=10 秒。
+2. 最多 ATTEMPTS=5 次：启动只读监视器，调用 VLA 包装脚本（每次策略 ATTEMPT_S=45 秒，限速 0.5，RESET=1）。
+3. 任一手持续满足抓取判定则立即中断 VLA，记下 hand；start_hold 收臂后确认仍夹持。
+4. 路线 003→004，持续监测夹持；若掉落，当前路径完成后终止，不启动下一路径或放置。到达停 10 秒。
+5. `arm_down.sh <hand> 10`，再 `open_<hand>`，成功结束。五次全失败则 start 复位，停在红区。
+
+监视器 `arm/grasp_monitor.py` 在客户端容器中由 `python3 -u` 运行，每 0.1 秒输出 JSON。
+关节、夹爪、末端各自必须在 0.3 秒内有有效反馈；一条流新鲜不能掩盖另一条停滞。
+判定为 grip_pos 在 [0.12, 0.75] rad、grip_eff ≤ −1.0 N·m、
+相对该次闭合高度抬升 ≥ 0.04 m，连续 1.5 秒。holding 仅使用位置/力矩条件。
+阈值为初值，空夹位置和力矩仍须真机标定；反馈丢失不会作为普通失败继续尝试。
+
+配置集中在 `mission.py` 顶部，并支持同名环境变量：ATTEMPTS、ATTEMPT_S、PROMPT、ARRIVE_PAUSE、
+PLACE_CM、HOLD_POS_MIN/MAX、HOLD_EFF_MAX、LIFT_MIN、HOLD_PERSIST、MISSION_LOG_DIR。
+策略端口使用 MISSION_PORT（或 POLICY_PORT），默认 8000；`web_move.py` 的 PORT 仍为 HTTP 端口 8088。
+每次 API 请求可覆盖 attempts/prompt/port。MONITOR_TIMEOUT 默认 0.6 秒为监视器断流看门狗；
+SCRIPT_TIMEOUT 默认 90 秒为手臂/下降脚本时限，同时作为每次 VLA 复位和取帧的额外余量。
+所有等待均检查急停和反馈。路线的原有超时、拐角不停和服务器心跳保持不变。
+外部命令替换：TELEOP_CMD、VLA_CMD、ARM_CMD、ARM_DOWN_CMD（不带 side/cm）、MONITOR_CMD，
+以及原有 ESTOP_DEXEC/ARM_STOP；按带引号的 shell 命令行解析，但不通过 shell 执行。
+任务 JSONL 默认写到 `/root/ta2_mission/<id>.jsonl`，summary 包含终态、每次尝试和各步耗时。
+
+左臂推广：`arm.sh open_left|close_left` 与右臂对称，另一只爪不改指令；
+`arm_down.sh <left|right> <cm> [--dry-run]` 根据对应 `${side}_fk_fit.json` 计算 IK，再调用现有 goto。
+两侧高度下限均为各自肩坐标系 EE z=−0.40 m，网页原右臂下降按钮改用 `right 5`。
+
+B70 审查和标定时需要：
+
+- 左臂与右臂 FK/IK 拟合文件已置于 `arm/left_fk_fit.json`（2401 样本，中位残差 0.23 mm，p95 0.88 mm）与
+  `arm/right_fk_fit.json`（891 样本，中位残差 0.25 mm，p95 1.01 mm）；如机械结构调整，可在仿真容器重跑
+  `ik_offset.py --arm left|right --fit-samples samples.npz --save-fit <arm>_fk_fit.json`。
+- 验证左/右臂的末端高度方向、拟合残差、下降 dry-run 与 −0.40 m 下限，再进行实物下降验证。
+- 标定空夹、夹住沙包、收臂及搬运时的位置/力矩阈值和持物反馈抖动，确认 4 cm/1.5 s 判定合适。
+- 确认现场路线起点、两区桌面高度、10 cm 放置距离、策略端口和容器；复核 VLA 中断后夹爪保持，
+  并验证软件急停的 FSM PAUSE、监视器消息类型和频率。离线测试不能确认这些真机条件。
+
+本机离线测试（只启动 localhost HTTP 和假 ROS，不连接机器人）：
+
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+端到端用真实 teleop.py + tests/fakeros 驱动缩短的测试 CSV，假 VLA/手臂/下降及场景 JSON 监视器；
+真实 001–004 CSV 未修改。覆盖左/右成功、五次失败、途中掉落、急停、POST 门控、预检拒绝、
+反馈断流、脚本失败及原 API/手臂按钮回归。无需 ROS、Docker 或 MuJoCo；MuJoCo 数值与实物验证留给 B70。

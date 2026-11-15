@@ -51,6 +51,9 @@ TRAIN_START = os.path.join(os.path.dirname(os.path.abspath(__file__)), "train_st
 SAVE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "arm_start_pose.json")
 CMD_RATE = 100.0          # joint_cmd, Hz
 HB_RATE = 20.0            # fsm/enable heartbeat, Hz
+GOTO_MAX_DELTA = 0.65       # rad: goto refuses any single joint change larger than this (10 cm descent uses ~0.44 rad)
+GOTO_START_TOL = 0.05       # rad: if the file records the start it was computed from, the arm must still be there
+HOLD_OPEN_BELOW = 0.9       # gripper position (rad) below this = closed / holding; open is about 1.05
 MAX_SPEED = 0.35          # rad/s peak joint speed
 FRESH = 0.3               # s
 LAG_LIMIT, LAG_TIME = 0.3, 0.5
@@ -75,7 +78,9 @@ def minjerk(s):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["raise", "lower", "start"])
+    ap.add_argument("action", choices=["raise", "lower", "start", "place", "start_hold", "goto", "open_right", "close_right", "open_left", "close_left"])
+    ap.add_argument("--target", default="/outputs/arm/goto_target.json",
+                    help="goto: JSON {\"left\": [7]|null, \"right\": [7]|null, \"right_now\": [7] optional}; null/missing arm stays")
     ap.add_argument("--time", type=float, default=8.0, help="motion time in seconds (stretched if too fast)")
     ap.add_argument("--dry-run", action="store_true", help="check and print the plan, send nothing")
     a = ap.parse_args()
@@ -157,7 +162,7 @@ def main():
     hold = None
     try:
         print(f"Arms: {a.action}. Checking robot state...", flush=True)
-        spin_for(2.5, check=lambda now: st["mode"] is not None and len(st["q"]) == 2)
+        spin_for(2.5, check=lambda now: st["mode"] is not None and len(st["q"]) == 2 and len(st["g"]) == 2)
         if st["mode"] is None:
             raise Abort("no /api/current_mode: is the zenoh bridge running?")
         m = st["mode"]
@@ -180,7 +185,26 @@ def main():
 
         if a.action == "raise":
             target = {arm: clip(arm, RAISED[arm]) for arm in ARMS}
-        elif a.action == "start":
+        elif a.action in ("open_right", "close_right", "open_left", "close_left"):  # no motion: hold where the arms are
+            target = {arm: list(start[arm]) for arm in ARMS}
+        elif a.action == "goto":
+            try:
+                with open(a.target) as f:
+                    want = json.load(f)
+                target = {arm: clip(arm, [float(v) for v in want[arm]]) if want.get(arm) is not None else list(start[arm])
+                          for arm in ARMS}
+            except (OSError, ValueError, KeyError, TypeError) as e:
+                raise Abort(f"cannot read goto target {a.target}: {e}")
+            if any(len(target[arm]) != 7 for arm in ARMS):
+                raise Abort("goto target needs 7 joint values per arm")
+            for arm in ARMS:
+                ref = want.get(f"{arm}_now")
+                if ref is not None and max(abs(float(r) - s) for r, s in zip(ref, start[arm])) > GOTO_START_TOL:
+                    raise Abort(f"{arm} arm moved since the target was computed (more than {GOTO_START_TOL} rad from {a.target} {arm}_now): recompute")
+            big = max(abs(target[arm][i] - start[arm][i]) for arm in ARMS for i in range(7))
+            if big > GOTO_MAX_DELTA:
+                raise Abort(f"goto refused: a joint would change {big:.2f} rad (limit {GOTO_MAX_DELTA})")
+        elif a.action in ("start", "place", "start_hold"):
             try:
                 with open(TRAIN_START) as f:
                     saved = json.load(f)
@@ -196,11 +220,24 @@ def main():
             except (OSError, ValueError, KeyError):
                 raise Abort(f"no saved start pose ({SAVE}); run 'raise' first")
         delta = max(abs(target[arm][i] - start[arm][i]) for arm in ARMS for i in range(7))
-        dur = max(a.time, 1.875 * delta / MAX_SPEED, 2.0)    # min-jerk peak speed = 1.875 * delta / T
+        dur = max(a.time, 1.875 * delta / MAX_SPEED, 2.0)
+        if a.action in ("open_right", "close_right", "open_left", "close_left"):
+            dur = 2.0    # min-jerk peak speed = 1.875 * delta / T
         print(f"FSM state: {FSM.get(st['fsm'], st['fsm'])}")
         for arm in ARMS:
             print(f"{arm:5s} now   ", [round(v, 2) for v in start[arm]])
             print(f"{arm:5s} target", [round(v, 2) for v in target[arm]])
+        # start_hold: a gripper that is closed now (holding something) gets full closing force during the
+        # move; an open one is left alone. Nothing is ever opened.
+        grip_hold = {arm: 1.0 for arm in ARMS if st["g"].get(arm) is not None and st["g"][arm] < HOLD_OPEN_BELOW}
+        if a.action in ("start_hold", "goto"):
+            print("Grippers now", {arm: round(v, 2) for arm, v in st["g"].items()} or "no gripper feedback",
+                  "rad; kept closed (1.0) during the move:", sorted(grip_hold) or "none (all open)", "- nothing is opened")
+        if a.action.startswith(("open_", "close_")):
+            side = a.action.split("_")[1]
+            print(f"{side} gripper: {a.action.split('_')[0]}; both arms hold their pose; other gripper untouched")
+        if a.action == "place":
+            print("Grippers: held closed (1.0) during the move, opened (0.0) for 2 s only after the target is reached")
         if a.action == "start":
             print("Grippers: command", grip_start, "(0.0 = full opening force) during the move; now",
                   {arm: round(v, 2) for arm, v in st["g"].items()} or "no gripper feedback",
@@ -223,6 +260,14 @@ def main():
         # 2. smooth move
         if a.action == "start":
             grip.update(grip_start)
+        if a.action in ("start_hold", "goto"):
+            grip.update(grip_hold)
+        if a.action.startswith(("open_", "close_")):
+            side = a.action.split("_")[1]
+            grip[side] = 0.0 if a.action.startswith("open_") else 1.0
+            print(f"Gripper {a.action} (arms hold their pose)...", flush=True)
+        if a.action == "place":                  # keep whatever is held: full closing force while moving
+            grip.update({arm: 1.0 for arm in ARMS})
         print(f">> moving ({dur:.1f} s). Ctrl+C holds and pauses.", flush=True)
         t0 = time.monotonic()
         lag_since = [None]
@@ -265,6 +310,13 @@ def main():
         else:
             print("Reached the target.")
         spin_for(1.0, cmd_fn=lambda now: target)
+        if a.action == "place":
+            if exit_code == 2:
+                print("Not at the place pose: grippers stay closed (nothing released).", flush=True)
+            else:
+                grip.update({arm: 0.0 for arm in ARMS})      # 0.0 = full opening force
+                print("Opening grippers (release)...", flush=True)
+                spin_for(2.0, cmd_fn=lambda now: target)
         if grip:
             print("Grippers now", {arm: round(v, 2) for arm, v in st["g"].items()} or "no gripper feedback",
                   "rad (open is about 1.05)", flush=True)

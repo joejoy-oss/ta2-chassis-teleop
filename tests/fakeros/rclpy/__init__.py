@@ -11,6 +11,7 @@ import os, time, math, json, signal
 SC = json.loads(os.environ.get("SC", "{}"))
 OK = [True]
 def init(**kw): OK[0] = True
+def ok(): return OK[0]
 def shutdown(): OK[0] = False
 try_shutdown = shutdown
 class Robot:
@@ -93,8 +94,12 @@ def spin_once(node, timeout_sec=0):
                 a=JointState(); a.name=[f"{arm[0]}_joint{i+1}" for i in range(7)]; a.position=list(ARM.q[arm]); a.velocity=[0.0]*7
                 for cb in node._subs[f"/{arm}_arm/joint_states"]: cb(a)
             if node._subs.get(f"/{arm}_gripper/joint_states"):
-                g=JointState(); g.name=[f"{arm[0]}_joint8"]; g.position=[ARM.g[arm]]; g.velocity=[0.0]
+                g=JointState(); g.name=[f"{arm[0]}_joint8"]; g.position=[ARM.g[arm]]; g.velocity=[0.0]; g.effort=[-2.5 if ARM.g[arm]<0.75 else 0.2]
                 for cb in node._subs[f"/{arm}_gripper/joint_states"]: cb(g)
+            if node._subs.get(f"/{arm}_arm/current_ee_pose"):
+                from geometry_msgs.msg import Pose
+                pose=Pose(); pose.position.z=-0.30
+                for cb in node._subs[f"/{arm}_arm/current_ee_pose"]: cb(pose)
         if node._subs.get("/fsm_state"):
             from std_msgs.msg import Int32
             for cb in node._subs["/fsm_state"]: cb(Int32(ARM.fsm))

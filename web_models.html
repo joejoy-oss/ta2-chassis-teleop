@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>选择模型 · TA2</title>
+<style>
+:root{--bg:#f5f5f4;--fg:#252729;--muted:#64686c;--panel:#fff;--line:#dcdedc;--accent:#455c68;--solid:#303c43;--on-solid:#fff;--ok:#4f7260}
+@media(prefers-color-scheme:dark){:root{--bg:#17191a;--fg:#e5e7e8;--muted:#a3a9ad;--panel:#202426;--line:#3e4548;--accent:#a7bdc8;--solid:#cfdbdf;--on-solid:#1c2529;--ok:#9abca8}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+main{max-width:720px;margin:auto;padding:24px 20px 40px}a{color:inherit}h1{font-size:23px;margin:20px 0 8px}h2{font-size:18px;margin:0;overflow-wrap:anywhere}
+p{margin:8px 0}.muted{color:var(--muted);font-size:13px}#message{min-height:24px;overflow-wrap:anywhere}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin:16px 0}.card.selected{border:2px solid var(--accent);padding:19px}
+.row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;justify-content:space-between}.badge{font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:2px 8px}.online{color:var(--ok)}dl{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:18px 0}dt{color:var(--muted)}dd{margin:0;overflow-wrap:anywhere}
+button{font:inherit;min-height:46px;padding:10px 18px;border:1px solid var(--solid);border-radius:9px;background:var(--solid);color:var(--on-solid);cursor:pointer;width:100%}button:disabled{opacity:.5;cursor:default}button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:4px}.back{display:inline-block;padding:10px 0}#estop{width:auto;background:#c62828;color:#fff;border-color:#c62828;font-weight:700}
+</style></head><body><main>
+<div class="row"><a class="back" href="/">← 返回遥控</a><button id="estop" type="button">急停</button></div>
+<h1>选择已部署模型</h1>
+<p class="muted">选用后返回遥控页，点击“开始抓取”运行。切换模型不会启动机械臂。</p>
+<p id="current">正在读取当前模型…</p>
+<p id="message" role="status" aria-live="polite"></p>
+<div id="models"></div>
+</main><script>
+const list=document.getElementById('models'),message=document.getElementById('message'),current=document.getElementById('current');
+let selecting=false,polling=false,lastRender='';
+const estop=document.getElementById('estop');
+estop.onclick=async()=>{
+  if(estop.disabled)return;estop.disabled=true;
+  try{const response=await fetch('/estop',{method:'POST'});if(!response.ok)throw Error('急停请求失败');message.textContent='已请求急停。'}
+  catch(error){message.textContent='急停请求失败，请返回遥控检查连接。'}
+  finally{estop.disabled=false;lastRender='';load()}
+};
+document.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();estop.click()}});
+async function choose(id){
+  if(selecting)return;selecting=true;list.querySelectorAll('button').forEach(b=>b.disabled=true);
+  try{
+    const response=await fetch('/models/select/'+encodeURIComponent(id),{method:'POST'}),result=await response.json();
+    if(!response.ok)throw Error(result.error||'切换失败');
+    location.href='/';
+  }catch(error){message.textContent=error.message;selecting=false;lastRender='';load()}
+}
+function render(data){
+  current.textContent='当前选用：'+(data.models.find(m=>m.id===data.selected)?.name||'未知');
+  if(data.busy)message.textContent='机器人正在运行，任务结束后可切换模型。';
+  else if(message.textContent==='机器人正在运行，任务结束后可切换模型。')message.textContent='';
+  list.replaceChildren();
+  for(const model of data.models){
+    const selected=model.id===data.selected,card=document.createElement('section');card.className='card'+(selected?' selected':'');
+    const row=document.createElement('div');row.className='row';
+    const title=document.createElement('h2');title.textContent=model.name;
+    const status=document.createElement('span');status.className='badge'+(model.running?' online':'');status.textContent=model.running?'服务运行中':'服务未运行';
+    row.append(title,status);card.append(row);
+    const details=document.createElement('dl');
+    for(const [label,value] of [['训练数据',model.training],['任务指令',model.prompt],['运行时长',model.seconds+' 秒'],['速度上限',model.speed+' rad/s']]){
+      const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value;details.append(dt,dd)
+    }
+    const button=document.createElement('button');button.textContent=selected?'当前已选用':model.running?'使用此模型':'服务未运行';
+    button.disabled=selected||data.busy||!model.running||selecting;button.onclick=()=>choose(model.id);card.append(details,button);list.append(card)
+  }
+}
+async function load(){
+  if(selecting||polling)return;polling=true;
+  try{
+    const response=await fetch('/api/models');if(!response.ok)throw Error('无法读取模型列表');
+    const data=await response.json(),snapshot=JSON.stringify(data);
+    if(snapshot!==lastRender){render(data);lastRender=snapshot}
+    if(message.textContent==='连接失败，请检查网络。')message.textContent='';
+  }catch(error){message.textContent='连接失败，请检查网络。';lastRender='';list.querySelectorAll('button').forEach(b=>b.disabled=true)}
+  finally{polling=false}
+}
+load();setInterval(load,2000);
+</script></body></html>
