@@ -135,8 +135,10 @@ class TA2Client:
         return self._run("vla.grasp", params, wait, timeout, poll, raise_on_fail)
 
     def run_mission(self, attempts=None, prompt=None, port=None, wait=False, timeout=1800,
-                    poll=0.5, raise_on_fail=False):
-        params = {k: v for k, v in (("attempts", attempts), ("prompt", prompt), ("port", port)) if v is not None}
+                    poll=0.5, raise_on_fail=False, flow=None):
+        """flow: None/"v1" = steps 1-6, "v2" = steps 1-7 (adds the voice interaction module), "voice" = step 7 only."""
+        params = {k: v for k, v in (("attempts", attempts), ("prompt", prompt), ("port", port), ("flow", flow))
+                  if v is not None}
         return self._run("mission.run", params, wait, timeout, poll, raise_on_fail)
 
     def step(self, direction, wait=False, timeout=300, poll=0.5, raise_on_fail=False):

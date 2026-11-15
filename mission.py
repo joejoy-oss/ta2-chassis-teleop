@@ -11,6 +11,8 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 ATTEMPTS = int(os.environ.get("ATTEMPTS", "5"))
 ATTEMPT_S = float(os.environ.get("ATTEMPT_S", "45"))
@@ -29,6 +31,24 @@ MISSION_LOG_DIR = os.environ.get("MISSION_LOG_DIR", "/root/ta2_mission")
 MONITOR_TIMEOUT = float(os.environ.get("MONITOR_TIMEOUT", "0.6"))
 SCRIPT_TIMEOUT = float(os.environ.get("SCRIPT_TIMEOUT", "90"))
 SIDES = ("left", "right")
+# Full flow v2 = steps 1-6 + step 7 "voice interaction module" (flow "voice" runs only step 7, for debugging).
+FLOWS = ("v1", "v2", "voice")
+VOICE_BRIDGE = os.environ.get("VOICE_BRIDGE", "http://127.0.0.1:18096")   # Mac voice service via ssh -R
+VOICE_BRIDGE_HOST = os.environ.get("VOICE_BRIDGE_HOST", "127.0.0.1:8096")
+VOICE_LISTEN_S = float(os.environ.get("VOICE_LISTEN_S", "120"))
+VOICE_ANNOUNCE_S = float(os.environ.get("VOICE_ANNOUNCE_S", "60"))
+VOICE_RELEASE_S = float(os.environ.get("VOICE_RELEASE_S", "5"))
+HANDOFF_CM = float(os.environ.get("HANDOFF_CM", "10"))
+OPEN_MIN = float(os.environ.get("OPEN_MIN", "0.9"))   # rad; open is about 1.05, empty-closed about -0.05
+VOICE_STEPS = (
+    ("7.1", "识别口令", "Mac 语音端 /rehearse → /status"),
+    ("7.2", "真机抓取（抓住即停）", "VLA + 抓取成功判定（同第 3 步）"),
+    ("7.3", "收臂（保持夹紧）", "arm start_hold（同第 4 步）"),
+    ("7.4", f"下降 {HANDOFF_CM:g} cm", "arm_down.sh（同第 6 步）"),
+    ("7.5", "松开夹爪", "arm open_<手>（同第 6 步）"),
+    ("7.6", "确认交接", "夹爪读数：张开且未夹持"),
+    ("7.7", "完成播报", "Mac 语音端 /confirm"),
+)
 
 
 def finite(value):
@@ -74,9 +94,11 @@ def grasp_update(previous, sample, t):
 
 
 def options(params):
-    if set(params) - {"attempts", "prompt", "port", "rtc"}:
-        raise ValueError("mission parameters: attempts, prompt, port, rtc (all optional)")
-    cfg = {"attempts": ATTEMPTS, "prompt": PROMPT, "port": PORT, "rtc": RTC, **params}
+    if set(params) - {"attempts", "prompt", "port", "rtc", "flow"}:
+        raise ValueError("mission parameters: attempts, prompt, port, rtc, flow (all optional)")
+    cfg = {"attempts": ATTEMPTS, "prompt": PROMPT, "port": PORT, "rtc": RTC, "flow": "v1", **params}
+    if cfg["flow"] not in FLOWS:
+        raise ValueError("flow must be v1, v2 or voice")
     if type(cfg["rtc"]) is not bool:
         raise ValueError("rtc must be true or false")
     if type(cfg["attempts"]) is not int or not 1 <= cfg["attempts"] <= ATTEMPTS:
@@ -250,6 +272,13 @@ class Mission:
                 raise MissionFailure("robot is not in API mode")
             self.h.check_policy(port=cfg["port"])
             missing = [n for n in ("001", "002", "003", "004") if n not in self.h.paths]
+            if cfg.get("flow") == "voice":
+                missing = []        # step 7 alone does not drive the chassis
+            if cfg.get("flow") in ("v2", "voice"):
+                try:
+                    self._bridge("GET", "/status")
+                except MissionFailure as exc:
+                    raise MissionFailure("voice module unavailable: " + str(exc)) from exc
             if missing:
                 raise MissionFailure("missing paths: " + ", ".join(missing))
             self.detecting = self.carrying = False
@@ -270,7 +299,12 @@ class Mission:
         self.state = {"id": mid, "status": "running", "step": "preflight", "hand": None,
                       "attempt": 0, "attempts": cfg["attempts"], "pause_until": None,
                       "result": None, "attempt_results": [], "durations": {},
-                      "config": {k: cfg.get(k) for k in ("model", "model_name", "port", "prompt", "rtc")}}
+                      "config": {k: cfg.get(k) for k in ("model", "model_name", "port", "prompt", "rtc", "flow")},
+                      "flow": cfg.get("flow", "v1"),
+                      "voice": None if cfg.get("flow", "v1") == "v1" else {
+                          "hand": None, "attempt_results": [],
+                          "steps": [{"id": i, "name": n, "uses": u, "status": "pending", "detail": ""}
+                                    for i, n, u in VOICE_STEPS]}}
         self.active_step, self.step_started = None, None
         self.dropped = False
         self.drop_since = None
@@ -413,6 +447,143 @@ class Mission:
         if rc != 0:
             raise MissionFailure(f"arm {action} exited {rc}")
 
+    def _grasp_attempts(self, cfg, prefix, results):
+        """Up to cfg["attempts"] VLA runs; each stops as soon as the grasp detector reports success.
+        Returns the grasping hand or None. Shared by step 3 and step 7.2."""
+        for i in range(1, cfg["attempts"] + 1):
+            self._check()
+            self.state["attempt"] = i
+            self.detecting = False
+            self._new_monitor()
+            self.detectors, self.success_hand = {}, None
+            self.detecting = True
+            tag = f"{prefix}_{i}"
+            entry = {"attempt": i, "tag": tag, "result": "running", "hand": None}
+            results.append(entry)
+            self._event("attempt_start", **entry)
+            try:
+                rc, hand = self._execute(self.h.VLA_CMD + [tag, str(ATTEMPT_S), "1.0"],
+                                         kind="vla", attempt=True,
+                                         env={**os.environ, "PROMPT": cfg["prompt"], "PORT": str(cfg["port"]), "RESET": "1",
+                                              "RTC": "1" if cfg.get("rtc") else "0"})
+                entry.update(result="succeeded" if hand else "failed", hand=hand, returncode=rc)
+            except Exception:
+                entry.update(result="aborted" if self.cancel.is_set() else "failed")
+                raise
+            finally:
+                self.detecting = False
+                self._event("attempt_end", **entry)
+            if hand:
+                return hand
+        return None
+
+    def _bridge(self, method, path, body=None, timeout=4):
+        """Mac voice service (microphone + speaker) through the B70 reverse tunnel."""
+        data = None if body is None else json.dumps(body).encode()
+        req = Request(VOICE_BRIDGE + path, data=data, method=method,
+                      headers={"Content-Type": "application/json", "Host": VOICE_BRIDGE_HOST})
+        try:
+            with urlopen(req, timeout=timeout) as response:
+                return json.load(response)
+        except (URLError, OSError, ValueError) as exc:
+            raise MissionFailure(f"Mac voice service: {exc}") from exc
+
+    def _voice_sub(self, index, status, detail=None):
+        sub = self.state["voice"]["steps"][index]
+        sub["status"] = status
+        if detail is not None:
+            sub["detail"] = detail
+        self._event("voice_step", id=sub["id"], status=status, detail=sub["detail"])
+
+    def _voice(self, cfg):
+        """Step 7, voice interaction module: 7.1 listen ... 7.7 announce. Each sub-step must succeed."""
+        self._step("voice")
+        v, cur = self.state["voice"], 0
+        try:
+            # 7.1 the recipient asks for the bag
+            self._voice_sub(0, "running", "Mac 正在听")
+            seen = self._bridge("POST", "/rehearse", {}).get("state") == "listening"
+            deadline = time.monotonic() + VOICE_LISTEN_S
+            while True:
+                self._check()
+                state = self._bridge("GET", "/status").get("state")
+                seen = seen or state == "listening"
+                if state == "recognized" and seen:
+                    break
+                if state == "failed":
+                    raise MissionFailure("7.1 voice recognition failed")
+                if time.monotonic() >= deadline:
+                    raise MissionFailure(f"7.1 no voice command within {VOICE_LISTEN_S:g} s")
+                self.cancel.wait(0.2)
+            self._voice_sub(0, "succeeded", "已识别口令")
+            # 7.2 grasp the bag from the table (same attempts and detector as step 3)
+            cur = 1
+            self._voice_sub(1, "running", "抓住即停")
+            hand = self._grasp_attempts(cfg, f"mission_{self.state['id']}_v", v["attempt_results"])
+            if hand is None:
+                self._arm("start")
+                raise MissionFailure("7.2 all grasp attempts failed; arms reset")
+            v["hand"] = self.state["hand"] = hand
+            self._voice_sub(1, "succeeded", "已抓住（" + ("左手" if hand == "left" else "右手") + "）")
+            # 7.3 stow, gripper kept closed
+            cur = 2
+            self._voice_sub(2, "running")
+            self._arm("start_hold")
+            self._check()
+            if not holding(self.monitor.frame[hand]):
+                raise MissionFailure("7.3 object dropped after stow")
+            self.drop_since, self.dropped, self.carrying = None, False, True
+            self._voice_sub(2, "succeeded")
+            # 7.4 lower toward the recipient's hand
+            cur = 3
+            self._voice_sub(3, "running")
+            rc, _ = self._execute(self.h.ARM_DOWN_CMD + [hand, f"{HANDOFF_CM:g}"], kind="down")
+            if rc != 0:
+                raise MissionFailure(f"7.4 arm_down exited {rc}")
+            self._check()
+            if self.dropped or not holding(self.monitor.frame[hand]):
+                raise MissionFailure("7.4 object dropped before release")
+            self._voice_sub(3, "succeeded")
+            # 7.5 release (only the grasping hand)
+            cur = 4
+            self._voice_sub(4, "running")
+            self.carrying = False      # opening is intentional from here on
+            self._arm("open_" + hand)
+            self._check()
+            self._voice_sub(4, "succeeded")
+            # 7.6 handover confirmed: that gripper is open and holds nothing
+            cur = 5
+            self._voice_sub(5, "running")
+            deadline = time.monotonic() + VOICE_RELEASE_S
+            while True:
+                self._check()
+                f = self.monitor.frame[hand]
+                if finite(f.get("grip_pos")) and f["grip_pos"] >= OPEN_MIN and not holding(f):
+                    break
+                if time.monotonic() >= deadline:
+                    raise MissionFailure(f"7.6 gripper not confirmed open/empty (pos {f.get('grip_pos')})")
+                self.cancel.wait(0.05)
+            self._voice_sub(5, "succeeded", f"夹爪 {f['grip_pos']:.2f} rad，未夹持")
+            # 7.7 completion announcement on the Mac speaker
+            cur = 6
+            self._voice_sub(6, "running")
+            self._bridge("POST", "/confirm", {})
+            deadline = time.monotonic() + VOICE_ANNOUNCE_S
+            while True:
+                self._check()
+                state = self._bridge("GET", "/status").get("state")
+                if state == "done":
+                    break
+                if state == "failed":
+                    raise MissionFailure("7.7 announcement failed")
+                if time.monotonic() >= deadline:
+                    raise MissionFailure("7.7 announcement timeout")
+                self.cancel.wait(0.2)
+            self._voice_sub(6, "succeeded", "播报完成")
+        except BaseException:
+            self._voice_sub(cur, "failed")
+            raise
+
     def _run(self, cfg, action):
         status, reason = "failed", "mission did not finish"
         try:
@@ -420,97 +591,83 @@ class Mission:
             self.logfile = open(Path(MISSION_LOG_DIR) / (self.state["id"] + ".jsonl"), "a", buffering=1)
             self._event("start", id=self.state["id"], config=cfg)
             self._step("preflight")
-            self._step("g2r")
-            self._route("g2r")
-            self._pause()
-            self._step("grasp")
-            for i in range(1, cfg["attempts"] + 1):
-                self._check()
-                self.state["attempt"] = i
-                self.detecting = False
-                self._new_monitor()
-                self.detectors, self.success_hand = {}, None
-                self.detecting = True
-                tag = f"mission_{self.state['id']}_{i}"
-                entry = {"attempt": i, "tag": tag, "result": "running", "hand": None}
-                self.state["attempt_results"].append(entry)
-                self._event("attempt_start", **entry)
-                try:
-                    rc, hand = self._execute(self.h.VLA_CMD + [tag, str(ATTEMPT_S), "1.0"],
-                                             kind="vla", attempt=True,
-                                             env={**os.environ, "PROMPT": cfg["prompt"], "PORT": str(cfg["port"]), "RESET": "1",
-                                                  "RTC": "1" if cfg.get("rtc") else "0"})
-                    entry.update(result="succeeded" if hand else "failed", hand=hand, returncode=rc)
-                except Exception:
-                    entry.update(result="aborted" if self.cancel.is_set() else "failed")
-                    raise
-                finally:
-                    self.detecting = False
-                    self._event("attempt_end", **entry)
-                if hand:
-                    self.state["hand"] = hand
-                    break
-            if self.state["hand"] is None:
-                self._arm("start")
-                raise MissionFailure("all grasp attempts failed; arms reset")
-            self._step("stow")
-            self._arm("start_hold")
-            self._check()
-            if not holding(self.monitor.frame[self.state["hand"]]):
-                raise MissionFailure("object dropped after stow")
-            self.drop_since = None
-            self.carrying = True
-            self._step("r2g")
-            self._route("r2g")
-            self._pause()
-            self._step("place")
-            rc, _ = self._execute(self.h.ARM_DOWN_CMD + [self.state["hand"], f"{PLACE_CM:g}"], kind="down")
-            if rc != 0:
-                raise MissionFailure(f"arm_down exited {rc}")
-            self._check()
-            if self.dropped or not holding(self.monitor.frame[self.state["hand"]]):
-                raise MissionFailure("object dropped before release")
-            self.carrying = False  # opening is intentional from this point on
-            self._arm("open_" + self.state["hand"])
-            self._check()
-            status, reason = "succeeded", "placed"
+            flow = cfg.get("flow", "v1")
+            if flow != "voice":
+                self._steps_1_to_6(cfg)
+            if flow in ("v2", "voice"):
+                self._voice(cfg)
+            status, reason = "succeeded", "placed" if flow == "v1" else "handed over"
         except MissionAborted:
             status, reason = "aborted", "emergency stop"
         except Exception as exc:
             reason = str(exc)
         finally:
-            self.detecting = self.carrying = False
+            self._finish(status, reason, action)
+
+    def _steps_1_to_6(self, cfg):
+        self._step("g2r")
+        self._route("g2r")
+        self._pause()
+        self._step("grasp")
+        hand = self._grasp_attempts(cfg, f"mission_{self.state['id']}", self.state["attempt_results"])
+        if hand is None:
+            self._arm("start")
+            raise MissionFailure("all grasp attempts failed; arms reset")
+        self.state["hand"] = hand
+        self._step("stow")
+        self._arm("start_hold")
+        self._check()
+        if not holding(self.monitor.frame[self.state["hand"]]):
+            raise MissionFailure("object dropped after stow")
+        self.drop_since = None
+        self.carrying = True
+        self._step("r2g")
+        self._route("r2g")
+        self._pause()
+        self._step("place")
+        rc, _ = self._execute(self.h.ARM_DOWN_CMD + [self.state["hand"], f"{PLACE_CM:g}"], kind="down")
+        if rc != 0:
+            raise MissionFailure(f"arm_down exited {rc}")
+        self._check()
+        if self.dropped or not holding(self.monitor.frame[self.state["hand"]]):
+            raise MissionFailure("object dropped before release")
+        self.carrying = False  # opening is intentional from this point on
+        self._arm("open_" + self.state["hand"])
+        self._check()
+
+    def _finish(self, status, reason, action):
+        self.detecting = self.carrying = False
+        try:
+            if status != "succeeded":
+                self.h.seq["abort"] = True
+                self.h.send("stop")
+        except Exception as exc:
+            reason += f"; stop failed: {exc}"
+        try:
+            if self.monitor:
+                self.monitor.close()
+        except Exception as exc:
+            status = "failed"
+            reason += f"; monitor cleanup failed: {exc}"
+        finally:
+            self.monitor = None
+        with self.h.seq_lock:
+            if self.cancel.is_set():
+                status, reason = "aborted", "emergency stop"
+            self.state.update(status=status, result=reason, pause_until=None)
+            self.active = False
             try:
-                if status != "succeeded":
-                    self.h.seq["abort"] = True
-                    self.h.send("stop")
-            except Exception as exc:
-                reason += f"; stop failed: {exc}"
-            try:
-                if self.monitor:
-                    self.monitor.close()
-            except Exception as exc:
-                status = "failed"
-                reason += f"; monitor cleanup failed: {exc}"
+                if self.logfile:
+                    self._finish_step()
+                    self._event("summary", **self.snapshot())
+            except OSError as exc:
+                self.h.note(f"mission final log failed: {exc}")
             finally:
-                self.monitor = None
-            with self.h.seq_lock:
-                if self.cancel.is_set():
-                    status, reason = "aborted", "emergency stop"
-                self.state.update(status=status, result=reason, pause_until=None)
-                self.active = False
                 try:
                     if self.logfile:
-                        self._finish_step()
-                        self._event("summary", **self.snapshot())
-                except OSError as exc:
-                    self.h.note(f"mission final log failed: {exc}")
+                        self.logfile.close()
                 finally:
-                    try:
-                        if self.logfile:
-                            self.logfile.close()
-                    finally:
-                        self.logfile = None
-                        self.h.end_action(action, self.snapshot(), status == "succeeded",
-                                          code="ESTOP" if status == "aborted" else None)
-                self.h.note(f"mission {self.state['id']}: {status}: {reason}")
+                    self.logfile = None
+                    self.h.end_action(action, self.snapshot(), status == "succeeded",
+                                      code="ESTOP" if status == "aborted" else None)
+            self.h.note(f"mission {self.state['id']}: {status}: {reason}")

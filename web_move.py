@@ -885,6 +885,7 @@ ACTION_PARAMS = {
                   "stop_on_grasp": "optional boolean (default: false)"},
     "odom.reset": {},
     "mission.run": {"attempts": "optional integer", "prompt": "optional string", "port": "optional integer",
+                    "flow": "optional: v1 (steps 1-6, default) | v2 (adds step 7 voice interaction module) | voice (step 7 only)",
                     "rtc": "optional boolean (default: the selected model's mode)"},
 }
 
@@ -1095,6 +1096,10 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
 [hidden]{display:none!important}
 @media(max-width:420px){.bar{padding:12px 16px;gap:8px 10px}.app{padding:20px 12px 28px;gap:16px}.body{padding:18px 16px}.identity{gap:6px 8px}summary{padding:14px 16px}.estop{padding:10px 14px}.hint{font-size:11px}}
 .mission-current{font-weight:700;color:var(--accent);background:var(--grid);border-radius:6px}
+#voicesub{margin:4px 0 0;padding-left:8px;list-style:none;font-weight:400;background:none}
+#voicesub li{margin:2px 0}#voicesub small{color:var(--muted,#888)}
+#voicesub .sub-running{color:var(--accent);font-weight:700}#voicesub .sub-failed{color:#c62828;font-weight:700}
+#voicesub .sub-succeeded{color:#2e7d32}
 </style></head><body>
 <header><div class="bar">
   <div class="identity"><h1>TA2 遥控</h1><a href="/api-docs" target="_blank" rel="noopener">接口文档 / 测试</a><span id="connection" class="connection" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-text">连接中…</span></span><span id="mode" class="badge">模式未知</span></div>
@@ -1105,8 +1110,10 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
   <section class="card"><div class="body">
     <h2>全流程</h2>
     <p id="missionmodel" class="status-line">当前模型：读取中…</p>
-    <button id="missionrun" class="primary" disabled>开始全流程</button>
-    <ol id="missionsteps"><li data-step="preflight">预检</li><li data-step="g2r">绿→红</li><li data-step="grasp">抓取 0/5</li><li data-step="stow">收臂</li><li data-step="r2g">红→绿</li><li data-step="place">放下</li></ol>
+    <button id="missionrun" class="primary" disabled>开始全流程（1–6）</button>
+    <button id="missionrun2" class="primary" disabled>开始全流程 v2（1–7，含语音交互）</button>
+    <button id="missionvoice" disabled>单独运行第 7 步</button>
+    <ol id="missionsteps"><li data-step="preflight">预检</li><li data-step="g2r">绿→红</li><li data-step="grasp">抓取 0/5</li><li data-step="stow">收臂</li><li data-step="r2g">红→绿</li><li data-step="place">放下</li><li data-step="voice"><span>语音交互模块（全流程 v2）</span><ol id="voicesub"></ol></li></ol>
     <p id="missionstatus" class="status-line" role="status">尚未运行</p>
   </div></section>
   <section class="card"><div class="body">
@@ -1265,19 +1272,34 @@ const routeBtns=[...document.querySelectorAll('button[data-route]')],routeSt=doc
 const routeLabels={g2r:'绿 → 红',r2g:'红 → 绿'};
 routeBtns.forEach(b=>b.onclick=async()=>{const r=await post('/route/'+b.dataset.route);if(r.error)routeSt.textContent=uiText(r.error)});
 const missionBtn=document.getElementById('missionrun'),missionSt=document.getElementById('missionstatus');
-missionBtn.onclick=async()=>{missionBtn.disabled=true;try{const r=await post('/mission/run');if(r.error)missionSt.textContent=uiText(typeof r.error==='string'?r.error:r.error.message)}catch(e){missionSt.textContent='无法开始任务'}};
+async function startMission(path,btn){btn.disabled=true;try{const r=await post(path);if(r.error)missionSt.textContent=uiText(typeof r.error==='string'?r.error:r.error.message)}catch(e){missionSt.textContent='无法开始任务'}}
+missionBtn.onclick=()=>startMission('/mission/run',missionBtn);
+const missionBtn2=document.getElementById('missionrun2'),missionVoiceBtn=document.getElementById('missionvoice');
+missionBtn2.onclick=()=>startMission('/mission/run/v2',missionBtn2);
+missionVoiceBtn.onclick=()=>startMission('/mission/run/voice',missionVoiceBtn);
+const VOICE_STEPS=__VOICE_STEPS__;
+function renderVoice(m){
+  const steps=(m.voice&&m.voice.steps)||VOICE_STEPS.map(([id,name,uses])=>({id,name,uses,status:'pending',detail:''}));
+  const mark={pending:'',running:' …',succeeded:' ✓',failed:' ✗'};
+  const ol=document.getElementById('voicesub');ol.textContent='';
+  steps.forEach(st=>{const li=document.createElement('li');li.className='sub-'+st.status;
+    li.textContent=st.id+' '+st.name+(mark[st.status]||'')+(st.detail?' · '+st.detail:'');
+    const u=document.createElement('small');u.textContent='　调用：'+st.uses;li.appendChild(u);ol.appendChild(li);});
+}
 function updateMission(s){
   const m=s.mission||{},active=!!m.active;
   const mc=m.config,mm=document.getElementById('missionmodel');
   if(active&&mc)mm.textContent='本次使用：'+(mc.model_name||('端口 '+mc.port))+'（'+mc.prompt+'）· '+(mc.rtc?'RTC 流畅执行':'同步执行');
   else if(s.vla_selection)mm.textContent='将使用：'+s.vla_selection.name+'（'+s.vla_selection.prompt+'）· '+(s.vla_selection.rtc?'RTC 流畅执行':'同步执行')+' · 在上方「抓取模型」里切换';
   missionBtn.disabled=active||!s.connected||s.mode_ok!==true||!!s.estop||!!s.moving||s.seq.length>0||!!s.arm||!!s.vla;
+  missionBtn2.disabled=missionVoiceBtn.disabled=missionBtn.disabled;
+  renderVoice(m);
   document.querySelectorAll('#missionsteps li').forEach(el=>{
     el.classList.toggle('mission-current',el.dataset.step===m.step);
     if(el.dataset.step==='grasp')el.textContent='抓取 '+(m.attempt||0)+'/'+(m.attempts||5);
   });
   const results={idle:'尚未运行',running:'运行中',succeeded:'成功',failed:'失败',aborted:'已急停中止'};
-  missionSt.textContent=(results[m.status]||'尚未运行')+(m.hand?' · 抓取手：'+(m.hand==='left'?'左手':'右手'):'')+(m.pause_left_s>0?' · 停留 '+Math.ceil(m.pause_left_s)+' 秒':'')+(m.result?' · '+m.result:'')+(active?' · 仅接受急停':'');
+  missionSt.textContent=({v1:'全流程 · ',v2:'全流程 v2 · ',voice:'仅第 7 步 · '}[m.flow]||'')+(results[m.status]||'尚未运行')+(m.hand?' · 抓取手：'+(m.hand==='left'?'左手':'右手'):'')+(m.pause_left_s>0?' · 停留 '+Math.ceil(m.pause_left_s)+' 秒':'')+(m.result?' · '+m.result:'')+(active?' · 仅接受急停':'');
   if(active)document.querySelectorAll('button').forEach(b=>{if(b.id!=='estop')b.disabled=true});
 }
 function updateRoute(s){
@@ -1396,7 +1418,7 @@ async function poll(){try{
   lg.textContent=s.log.join('\n');lg.scrollTop=lg.scrollHeight;draw();
 }catch(e){connectionText.textContent='B70 不可达';connectionEl.className='connection';st.textContent='无法获取机器人状态';st.title=st.textContent;routeBtns.forEach(b=>b.disabled=true);if(!press)moves.forEach(x=>x.disabled=true)}}
 poll();setInterval(poll,300);
-</script></body></html>"""
+</script></body></html>""".replace("__VOICE_STEPS__", json.dumps(mission_module.VOICE_STEPS, ensure_ascii=False))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1567,6 +1589,8 @@ class Handler(BaseHTTPRequestHandler):
         parts = (command or self.path.strip("/")).split("/")
         if parts == ["mission", "run"]:
             return self._send(202, start_action({"type": "mission.run"}))
+        if len(parts) == 3 and parts[:2] == ["mission", "run"] and parts[2] in ("v2", "voice"):
+            return self._send(202, start_action({"type": "mission.run", "params": {"flow": parts[2]}}))
         if parts[:2] == ["models", "select"]:
             if len(parts) != 3 or parts[2] not in VLA_MODELS:
                 return self._send(400, {"error": "未知模型，请刷新模型列表"})

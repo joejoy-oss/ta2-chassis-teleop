@@ -139,6 +139,12 @@ POST 控制端点不需要请求体；启动动作使用 `Content-Type: applicat
 | `odom.reset` | `{}` | 发送现有 `reset_pose`，发送成功立即 succeeded |
 
 参数必须匹配动作类型；无参数动作可以省略 params。`mission.run` 保留现有 attempts/prompt/port/rtc 参数与行为。
+
+`mission.run` 的 `flow`（可选）：`v1`（默认，第 1–6 步）、`v2`（全流程 v2：1–6 步后接第 7 步语音交互模块）、
+`voice`（只运行第 7 步，用于调试）。第 7 步的子步骤在 `state.mission.voice.steps` 里实时给出：
+7.1 识别口令 → 7.2 真机抓取（抓住即停，同第 3 步）→ 7.3 收臂（start_hold）→ 7.4 下降 10 cm（arm_down）
+→ 7.5 松开该手 → 7.6 确认交接（夹爪张开且未夹持）→ 7.7 完成播报（Mac /confirm）。每步含 `id/name/uses/status/detail`。
+网页入口：`POST /mission/run/v2`、`POST /mission/run/voice`。
 序列保留现有路径间 `PATH_PAUSE`（默认 10 秒）。
 
 VLA 的终态 result 保留脚本 JSON 的原始字段，并带 `status`、`actuations`、`error`、`report`、

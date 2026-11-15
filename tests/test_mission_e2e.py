@@ -41,7 +41,8 @@ class _MissionServer:
                "ESTOP_DEXEC": shlex.join(fake + ["dex"]), "ARM_STOP": shlex.join(fake + ["dex", "pkill"]),
                "PATH_DIR": str(paths), "TRAIL_DIR": str(self.dir / "trails"),
                "MISSION_LOG_DIR": str(self.dir / "missions"), "ACTION_LOG": str(self.dir / "actions.jsonl"),
-               "PATH_PAUSE": "0.05", "ARRIVE_PAUSE": "0.05", "ATTEMPT_S": "4", "SC": '{"noise":0}'}
+               "PATH_PAUSE": "0.05", "ARRIVE_PAUSE": "0.05", "ATTEMPT_S": "4", "SC": '{"noise":0}',
+               **getattr(self, "extra_env", {})}
         self.server_log = (self.dir / "server.log").open("w")
         self.server = subprocess.Popen([sys.executable, "-u", str(ROOT / "web_move.py")], cwd=ROOT,
                                        env=env, stdout=self.server_log, stderr=subprocess.STDOUT,
