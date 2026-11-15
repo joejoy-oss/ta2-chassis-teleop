@@ -71,7 +71,10 @@ p0, R0 = fk(q0); tool0 = p0 + R0 @ t
 if np.linalg.norm(Ra @ tool0 + c - ee0) > 0.01:
     print(f"model and robot disagree by {np.linalg.norm(Ra @ tool0 + c - ee0) * 1000:.1f} mm: refusing"); sys.exit(2)
 delta_robot = np.array([a.dx, a.dy, a.dz])
-if (ee0 + delta_robot)[2] < Z_MIN:                 # go only as far as the height limit
+# Z_MIN limits only the downward part of a move. A horizontal/upward move may start below it (arms hanging
+# after a reboot) but its path may not go lower than where it started.
+floor = Z_MIN if a.dz < 0 else min(Z_MIN, ee0[2])
+if a.dz < 0 and (ee0 + delta_robot)[2] < Z_MIN:    # go only as far as the height limit
     if ee0[2] - Z_MIN < 0.002:
         print(f"already at the height limit (EE z {ee0[2]:.3f} m, limit {Z_MIN} m): nothing to do"); sys.exit(2)
     print(f"height limit: asked for EE z {(ee0 + delta_robot)[2]:.3f} m, going only to {Z_MIN} m")
@@ -96,7 +99,7 @@ for s in np.linspace(0, 1, 41):
     heights.append(float((Ra @ tt + c)[2]))
     prog.append(float(v @ step_dir)); dev.append(float(np.linalg.norm(v - (v @ step_dir) * step_dir)) * 1000)
 max_dev = max(5.0, float(np.linalg.norm(delta_robot)) * 80.0)
-if min(heights) < Z_MIN - 1e-3 or max(dev) > max_dev or not all(np.diff(prog) >= -5e-5):
+if min(heights) < floor - 1e-3 or max(dev) > max_dev or not all(np.diff(prog) >= -5e-5):
     print(f"path check failed (min_z {min(heights):.4f} m, sideways {max(dev):.1f}/{max_dev:.1f} mm, monotonic {all(np.diff(prog) >= -5e-5)}): refusing"); sys.exit(2)
 exp = (Ra @ tool + c).tolist()
 json.dump({a.arm: q.tolist(), f"{a.arm}_now": q0.tolist(), "delta_m": delta_robot.tolist(), "expected_ee": exp},
