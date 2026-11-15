@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import threading
+import time
 import types
 import unittest
 from unittest.mock import patch
@@ -70,6 +71,45 @@ class GuardTests(unittest.TestCase):
         runner.validate_mode(mode, 1.6, 2.5)          # 1 Hz mode topic: one late/missed message is tolerated
         with self.assertRaises(runner.GuardError): runner.validate_mode(mode, 2.6, 2.5)
         with self.assertRaises(runner.GuardError): runner.validate_mode(mode, -1, 1)
+
+
+class StartupWaitTests(unittest.TestCase):
+    def fake_module(self, video, joints):
+        class Video:
+            def has_initial_frame(self): return video
+        class Interface:
+            def __init__(self):
+                self._video = Video(); self.lock = threading.Lock(); self.latest_joint_states = {j: object() for j in joints}
+            def wait_for_initial_data(self, timeout=10.0): return "original"
+        pkg, mod = types.ModuleType("examples.teleavatar_v2"), types.ModuleType("examples.teleavatar_v2.ros2_interface")
+        mod.TeleavatarROS2Interface = Interface; pkg.ros2_interface = mod
+        return Interface, {"examples": types.ModuleType("examples"), "examples.teleavatar_v2": pkg,
+                           "examples.teleavatar_v2.ros2_interface": mod}
+
+    def test_missing_data_is_bounded_reported_and_restored(self):
+        cls, modules = self.fake_module(False, ["left_arm"])
+        report, stopped = {}, threading.Event()
+        with patch.dict(sys.modules, modules):
+            restore = runner.bound_startup_wait(types.SimpleNamespace(startup_timeout=0.2), report, stopped)
+            started = time.monotonic(); ok = cls().wait_for_initial_data(timeout=30.0); took = time.monotonic() - started
+            restore()
+            self.assertEqual(cls().wait_for_initial_data(), "original")
+        self.assertFalse(ok); self.assertLess(took, 1.0)
+        self.assertEqual(report["startup_missing"], {"video": True, "joints": ["right_arm"]})
+
+    def test_stop_ends_the_wait_and_ready_data_passes(self):
+        cls, modules = self.fake_module(False, [])
+        report, stopped = {}, threading.Event(); stopped.set()
+        with patch.dict(sys.modules, modules):
+            restore = runner.bound_startup_wait(types.SimpleNamespace(startup_timeout=30), report, stopped)
+            started = time.monotonic(); self.assertFalse(cls().wait_for_initial_data(timeout=30.0)); restore()
+        self.assertLess(time.monotonic() - started, 1.0)
+        cls, modules = self.fake_module(True, ["left_arm", "right_arm"])
+        report = {}
+        with patch.dict(sys.modules, modules):
+            restore = runner.bound_startup_wait(types.SimpleNamespace(startup_timeout=5), report, threading.Event())
+            self.assertTrue(cls().wait_for_initial_data()); restore()
+        self.assertIn("startup_wait_s", report)
 
 
 class StubExecutionTests(unittest.TestCase):

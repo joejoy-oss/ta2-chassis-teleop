@@ -38,6 +38,51 @@ class GuardError(RuntimeError):
     pass
 
 
+STARTUP_SENSOR_FAILURE = 3   # exit code: no live data at startup, nothing was commanded; vla_run.sh retries once
+
+
+def bound_startup_wait(args, report, stopped):
+    """The deployed client waits up to 30 s for the first video frame and both arm joint states and ignores STOP
+    meanwhile. Bound it to --startup-timeout, end it at once on STOP, print progress for the web log, and record
+    what was missing (report["startup_missing"]). Returns a function that restores the original method."""
+    try:
+        from examples.teleavatar_v2 import ros2_interface as _ri
+        cls = _ri.TeleavatarROS2Interface
+    except (ImportError, AttributeError):
+        return lambda: None
+    original = cls.wait_for_initial_data
+    limit = float(getattr(args, "startup_timeout", 8.0))
+
+    def bounded(self, timeout=10.0):
+        started = time.monotonic()
+        next_note = started + 2.0
+        while True:
+            video = bool(self._video.has_initial_frame())
+            with self.lock:
+                joints = [j for j in ("left_arm", "right_arm") if j in self.latest_joint_states]
+            if video and len(joints) == 2:
+                report["startup_wait_s"] = round(time.monotonic() - started, 3)
+                return True
+            now = time.monotonic()
+            if stopped.is_set() or now - started >= min(timeout, limit):
+                report["startup_missing"] = {"video": not video,
+                                             "joints": [j for j in ("left_arm", "right_arm") if j not in joints]}
+                print(f"startup: no live data after {now - started:.1f} s: video={'ok' if video else 'MISSING'}, "
+                      f"joints={joints or 'MISSING'}", flush=True)
+                return False
+            if now >= next_note:
+                print(f"startup: waiting for live data ({now - started:.0f} s): video={'ok' if video else 'missing'}, "
+                      f"joints={joints or 'missing'}", flush=True)
+                next_note += 2.0
+            stopped.wait(0.05)
+
+    cls.wait_for_initial_data = bounded
+
+    def restore():
+        cls.wait_for_initial_data = original
+    return restore
+
+
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -245,8 +290,12 @@ def execute(args, policy, destination, report, stopped):
         # No timer publishes during inference or cleanup. Native noninterpolated
         # publishing is supported by the deployed interface; every setpoint is
         # constrained to <= speed / frequency radians before it reaches it.
-        environment = TeleavatarEnvironment(prompt=args.prompt, control_frequency=args.frequency,
-                                            interpolate=False, enable_chassis=False, video_decode="va")
+        restore_wait = bound_startup_wait(args, report, stopped)
+        try:
+            environment = TeleavatarEnvironment(prompt=args.prompt, control_frequency=args.frequency,
+                                                interpolate=False, enable_chassis=False, video_decode="va")
+        finally:
+            restore_wait()
         interface = environment._ros_interface
         interface.sensor_timeout = args.max_age
         assert "chassis" not in interface.action_publishers
@@ -440,13 +489,15 @@ def parse_args():
     parser.add_argument("--max-age", type=float, default=1.0, help="joint state / camera freshness limit (s)")
     parser.add_argument("--max-mode-age", type=float, default=2.5,
                         help="/api/current_mode freshness limit (s); the topic is 1 Hz, so 2.5 tolerates one missed message")
+    parser.add_argument("--startup-timeout", type=float, default=8.0,
+                        help="seconds to wait for the first video frame and both arm joint states (exit 3 if missing)")
     parser.add_argument("--rtc", action="store_true",
                         help="async Real-Time Chunking (official RTCActionBroker): infer in the background while executing")
     parser.add_argument("--rtc-delay", type=int, default=None, help="RTC: pin the inference delay in steps (default: measured)")
     parser.add_argument("--rtc-horizon", type=int, default=None, help="RTC: pin the execution horizon in steps (default: 2x delay)")
     args = parser.parse_args()
     limits = ((args.frequency, 45), (args.max_seconds, 120), (args.max_speed, 1.0),
-              (args.max_tracking, 0.20), (args.max_initial_gap, 0.60), (args.max_age, 1), (args.max_mode_age, 3.0))
+              (args.max_tracking, 0.20), (args.max_initial_gap, 0.60), (args.max_age, 1), (args.max_mode_age, 3.0), (args.startup_timeout, 30.0))
     if any(not math.isfinite(value) or not 0 < value <= cap for value, cap in limits):
         parser.error("Guard values must be positive and cannot exceed their defaults")
     if not 1 <= args.max_actions <= 5400 or not 6 <= args.replan_steps <= 10 or args.frequency < 1:
@@ -495,7 +546,12 @@ def main():
         report["status"] = "aborted"
         report["error"] = f"{type(exc).__name__}: {exc}"
         report["traceback"] = traceback.format_exc()
-        exit_code = 130 if stopped.is_set() or isinstance(exc, KeyboardInterrupt) else 2
+        if stopped.is_set() or isinstance(exc, KeyboardInterrupt):
+            exit_code = 130
+        elif report.get("startup_missing") and report.get("actuations", 0) == 0:
+            exit_code = STARTUP_SENSOR_FAILURE
+        else:
+            exit_code = 2
     finally:
         if policy is not None:
             try:

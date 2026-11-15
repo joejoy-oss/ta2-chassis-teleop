@@ -23,7 +23,21 @@ if ss -lunpH sport = :8890 | grep -q .; then
 fi
 if [ "$RESET" = 1 ]; then /root/arm.sh start --time 6 || exit 1; fi
 TTY=-i; [ -t 0 ] && TTY=-it            # the web remote runs this without a terminal
-docker exec $TTY openpi-xpu-client bash -lc "source /opt/ros/humble/setup.bash; cd /outputs/tools && \
-python3 live_observation_probe.py --output-dir /outputs/${TAG}_probe | tail -1 && \
-python3 guarded_grasp.py --observation /outputs/${TAG}_probe/observation.npz --output-dir /outputs/${TAG} --execute \
+# One probe + guarded run. pipefail: a probe that fails or is stopped (STOP / E-STOP kill it) ends the chain
+# before guarded_grasp.py can start.
+run_once() {
+  docker exec $TTY openpi-xpu-client bash -lc "set -o pipefail; source /opt/ros/humble/setup.bash; cd /outputs/tools && \
+python3 live_observation_probe.py --output-dir /outputs/$1_probe | tail -1 && \
+python3 guarded_grasp.py --observation /outputs/$1_probe/observation.npz --output-dir /outputs/$1 --execute \
   --prompt '$PROMPT' --port $PORT --max-seconds $SEC --max-actions 5400 --max-speed $SPD $RTCFLAG 2>&1 | grep -v -E 'INFO|multicast'; exit \${PIPESTATUS[0]}"
+}
+run_once "$TAG"; rc=$?
+# Exit 3 = guarded_grasp got no video / joint states within its startup timeout and commanded nothing.
+# A fresh process usually gets them (the probe a second earlier did), so retry once. STOP / E-STOP during the
+# run give 130 / 137 (no retry) and also kill this script, so a stopped run never restarts.
+if [ $rc = 3 ]; then
+  echo "no live data reached the VLA at startup (nothing was commanded); retrying once with a fresh process"
+  sleep 1
+  run_once "${TAG}_retry"; rc=$?
+fi
+exit $rc

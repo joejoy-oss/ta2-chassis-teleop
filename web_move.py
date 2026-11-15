@@ -73,7 +73,7 @@ ARM_CMD = shlex.split(os.environ.get("ARM_CMD", f"docker exec {CONTAINER} /usr/l
                                     "python3 -u /outputs/arm/arm_pose.py"))
 ARM_STOP = shlex.split(os.environ.get("ARM_STOP", f"docker exec {CONTAINER} pkill -INT -f arm_pose.py"))
 # E-STOP: every process in the container whose command line matches this is stopped
-ESTOP_PROCS = "guarded_grasp.py|arm_pose.py|grasp_monitor.py"
+ESTOP_PROCS = "guarded_grasp.py|arm_pose.py|grasp_monitor.py|live_observation_probe.py"
 DEXEC = shlex.split(os.environ.get("ESTOP_DEXEC", f"docker exec {CONTAINER}"))   # "echo" for offline tests
 FSM_PAUSE = ["/usr/local/bin/openpi-client-entrypoint.sh", "timeout", "8", "ros2", "topic", "pub",
              "-r", "20", "-t", "40", "/api/fsm/enable", "std_msgs/msg/Float32", "{data: 0.0}"]
@@ -403,6 +403,20 @@ def run_arm(action, record=None):
             end_action(record, {"why": state["arm_last"], "returncode": rc, "output": last}, rc == 0)
 
 
+vla_proc = [None]   # host-side VLA runner (vla_run.sh); STOP / E-STOP end it so it cannot start a later step
+
+
+def end_vla_runner():
+    """Terminate the host-side runner so nothing it would start next (guarded_grasp after the probe, a startup
+    retry) can run. The container processes are stopped separately with pkill."""
+    p = vla_proc[0]
+    if p is not None and p.poll() is None:
+        try:
+            p.terminate()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def run_vla(tag, model_id, record=None):
     model = VLA_MODELS[model_id]
     label = model["name"]
@@ -414,6 +428,7 @@ def run_vla(tag, model_id, record=None):
         command = shlex.split(os.environ["VLA_CMD"]) if os.environ.get("VLA_CMD") else model["command"]
         p = subprocess.Popen(command + [tag, str(model["seconds"]), str(model["speed"])], stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, text=True)
+        vla_proc[0] = p
         for line in p.stdout:
             line = line.rstrip()
             if not line or "multicast" in line or " INFO " in line or line.startswith("Current mode"):
@@ -433,6 +448,7 @@ def run_vla(tag, model_id, record=None):
     except Exception as e:  # noqa: BLE001
         state["vla_last"] = f"{label} / {tag}: error {e}"
     finally:
+        vla_proc[0] = None
         with seq_lock:
             state["vla"] = None
             state["vla_model"] = None
@@ -452,6 +468,7 @@ def estop():
     try:
         seq["abort"] = True
         send("stop")
+        end_vla_runner()
         subprocess.run(DEXEC + ["pkill", "-INT", "-f", ESTOP_PROCS], capture_output=True)
         for _ in range(30):            # up to 3 s for a clean exit (scripts hold their pose)
             if subprocess.run(DEXEC + ["pgrep", "-f", ESTOP_PROCS], capture_output=True).returncode != 0:
@@ -1424,6 +1441,7 @@ class Handler(BaseHTTPRequestHandler):
                     subprocess.run(ARM_STOP, capture_output=True)
                     note("STOP: arm script interrupted")
                 if state["vla"]:
+                    end_vla_runner()
                     subprocess.run(DEXEC + ["pkill", "-INT", "-f", ESTOP_PROCS], capture_output=True)
                     note("STOP: VLA interrupted (arms hold where they are)")
             else:
