@@ -377,6 +377,58 @@ def resolve_model(model_id):
     return model_id
 
 
+GRIP_LOG = os.environ.get("GRIP_LOG", "/root/ta2_gripper_calib.jsonl")   # gripper calibration records
+
+
+def record_gripper(body):
+    """Read-only calibration snapshot: sample one gripper for `seconds` at ~10 Hz, append stats to GRIP_LOG."""
+    if not isinstance(body, dict) or set(body) - {"label", "hand", "seconds"}:
+        raise APIError(400, "BAD_REQUEST", "parameters: label (required), hand left/right, seconds 0.5-10")
+    label, hand, seconds = body.get("label"), body.get("hand", "right"), body.get("seconds", 2)
+    if not isinstance(label, str) or not 1 <= len(label.strip()) <= 40:
+        raise APIError(400, "BAD_REQUEST", "label must be 1-40 characters")
+    if hand not in ("left", "right") or type(seconds) not in (int, float) or not .5 <= seconds <= 10:
+        raise APIError(400, "BAD_REQUEST", "hand must be left/right and seconds 0.5-10")
+    samples, end = [], time.monotonic() + seconds
+    while True:
+        samples.append(gripper_monitor.readings())
+        if time.monotonic() >= end:
+            break
+        time.sleep(.1)
+
+    def stats(side, key):
+        vals = [x[side][key] for x in samples if mission_module.finite(x[side].get(key))]
+        return {"mean": round(sum(vals) / len(vals), 4), "min": round(min(vals), 4), "max": round(max(vals), 4)} if vals else None
+    other = "left" if hand == "right" else "right"
+    record = {"time": timestamp(), "label": label.strip(), "hand": hand, "seconds": seconds, "samples": len(samples),
+              "pos_rad": stats(hand, "pos"), "eff_nm": stats(hand, "eff"), "ee_z_m": stats(hand, "ee_z"),
+              "fresh": all(x[hand]["fresh"] for x in samples),
+              "holding_now_rule": sum(bool(x[hand]["holding"]) for x in samples),
+              "other_hand": {"hand": other, "pos_rad": stats(other, "pos"), "eff_nm": stats(other, "eff")}}
+    try:
+        with open(GRIP_LOG, "a") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        record["log_error"] = str(exc)
+    note(f"gripper record [{record['label']}] {hand}: pos {record['pos_rad']}, eff {record['eff_nm']}")
+    return record
+
+
+def gripper_records(limit=100):
+    try:
+        with open(GRIP_LOG) as f:
+            lines = f.read().splitlines()[-limit:]
+    except FileNotFoundError:
+        return []
+    out = []
+    for line in reversed(lines):
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            pass
+    return out
+
+
 def api_preflight(model_id):
     resolve_model(model_id)
     checks = []
@@ -1152,6 +1204,15 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
     </div>
   </div></section>
   <section class="card"><div class="body">
+    <h2>夹爪标定记录</h2>
+    <p class="status-line">只读：记录所选夹爪约 2 秒内的位置、力矩、手腕高度（不发任何指令）。先让夹爪夹好，再点对应按钮。</p>
+    <div class="grip-rec"><select id="griphand"><option value="right">右爪</option><option value="left">左爪</option></select>
+      <button class="small" data-glabel="实体">记录：实体</button><button class="small" data-glabel="薄片">记录：薄片</button><button class="small" data-glabel="空夹">记录：空夹</button>
+      <input id="griplabel" placeholder="其他标签" maxlength="40" size="10"><button class="small" id="gripcustom">记录</button></div>
+    <p id="gripst" class="status-line" role="status"></p>
+    <div style="overflow-x:auto"><table id="griptable" style="font-size:12px;border-collapse:collapse;width:100%"></table></div>
+  </div></section>
+  <section class="card"><div class="body">
     <h2>路线</h2>
     <div class="route-buttons">
       <button data-route="g2r" disabled><span class="route-title"><span class="route-dot green" aria-hidden="true"></span>绿 → 红<span class="route-dot red" aria-hidden="true"></span></span><small>001 → 停 10 秒 → 002</small></button>
@@ -1284,6 +1345,27 @@ armLower.onclick=async()=>{const r=await post('/arm/lower');if(r.error)st.textCo
 armStart.onclick=async()=>{const r=await post('/arm/start');if(r.error)st.textContent=uiText(r.error)};
 const armCloseRight=document.getElementById('armcloseright');armCloseRight.onclick=async()=>{const r=await post('/arm/close_right');if(r.error)st.textContent=r.error};
 const armOpenRight=document.getElementById('armopenright');armOpenRight.onclick=async()=>{const r=await post('/arm/open_right');if(r.error)st.textContent=r.error};
+async function gripRecord(label){
+  const st2=document.getElementById('gripst');if(!label.trim()){st2.textContent='请先填写标签';return}
+  st2.textContent='记录中（约 2 秒）…';document.querySelectorAll('[data-glabel],#gripcustom').forEach(b=>b.disabled=true);
+  try{const r=await fetch('/api/v1/grippers/record',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({label,hand:document.getElementById('griphand').value,seconds:2})});
+    const d=await r.json();if(!r.ok)throw Error((d.error&&d.error.message)||r.status);
+    st2.textContent='已记录：'+d.label+' · '+(d.hand==='right'?'右爪':'左爪')+' · 位置 '+d.pos_rad.mean+' rad · 力矩 '+d.eff_nm.mean+' N·m';
+  }catch(e){st2.textContent='记录失败：'+e.message}
+  finally{document.querySelectorAll('[data-glabel],#gripcustom').forEach(b=>b.disabled=false);loadGripRecords()}
+}
+async function loadGripRecords(){
+  try{const d=await (await fetch('/api/v1/grippers/records?limit=50')).json();const t=document.getElementById('griptable');
+    const f=x=>x?x.mean+' ('+x.min+'～'+x.max+')':'—';
+    t.innerHTML='<tr><th>时间</th><th>标签</th><th>手</th><th>位置 rad 均值(最小～最大)</th><th>力矩 N·m 均值(最小～最大)</th><th>手腕高度 m</th><th>现规则判夹住</th></tr>'+
+      d.records.map(r=>'<tr><td>'+r.time.slice(11,19)+'</td><td>'+r.label.replace(/[<&]/g,'')+'</td><td>'+(r.hand==='right'?'右':'左')+'</td><td>'+f(r.pos_rad)+'</td><td>'+f(r.eff_nm)+'</td><td>'+(r.ee_z_m?r.ee_z_m.mean:'—')+'</td><td>'+r.holding_now_rule+'/'+r.samples+'</td></tr>').join('');
+    t.querySelectorAll('th,td').forEach(c=>{c.style.border='1px solid var(--line,#ccc)';c.style.padding='2px 6px'});
+  }catch(e){}
+}
+document.querySelectorAll('[data-glabel]').forEach(b=>b.onclick=()=>gripRecord(b.dataset.glabel));
+document.getElementById('gripcustom').onclick=()=>gripRecord(document.getElementById('griplabel').value);
+loadGripRecords();
 const armDown5=document.getElementById('armdown5');armDown5.onclick=async()=>{const r=await post('/arm/down5');if(r.error)st.textContent=r.error};
 const armFwdLeft=document.getElementById('armfwdleft');armFwdLeft.onclick=async()=>{const r=await post('/arm/fwd5_left');if(r.error)st.textContent=r.error};
 const armFwdRight=document.getElementById('armfwdright');armFwdRight.onclick=async()=>{const r=await post('/arm/fwd5_right');if(r.error)st.textContent=r.error};
@@ -1460,6 +1542,10 @@ class Handler(BaseHTTPRequestHandler):
         # Monitor startup/service inspection must not block STOP or action polling.
         if path == "/api/v1/grippers":
             return self._send(200, gripper_monitor.readings())
+        if path == "/api/v1/grippers/records":
+            raw = parse_qs(query).get("limit", ["100"])[0]
+            limit = int(raw) if raw.isdigit() and 1 <= int(raw) <= 1000 else 100
+            return self._send(200, {"file": GRIP_LOG, "records": gripper_records(limit)})
         if path == "/api/v1/preflight":
             model_id = parse_qs(query, keep_blank_values=True).get("model", [state["vla_selected"]])[0]
             return self._send(200, api_preflight(model_id))
@@ -1584,6 +1670,13 @@ class Handler(BaseHTTPRequestHandler):
             # Both E-STOP endpoints bypass command locks and route gates.
             if path in ("/estop", "/api/v1/estop"):
                 return self._do_POST("estop")
+            if path == "/api/v1/grippers/record":   # read-only sampling: no command lock, allowed at any time
+                try:
+                    size = int(self.headers.get("Content-Length", "0"))
+                    body = json.loads(self.rfile.read(size)) if size else {}
+                except ValueError as exc:
+                    raise APIError(400, "BAD_REQUEST", "invalid JSON body: " + str(exc)) from exc
+                return self._send(200, record_gripper(body))
             with seq_lock:
                 if mission.active:
                     if api:

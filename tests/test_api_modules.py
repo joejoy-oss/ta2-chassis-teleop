@@ -27,6 +27,10 @@ class _ModuleServer(_MissionServer):
                 pass
         super().tearDown()
 
+    def request_text(self, path):
+        from urllib.request import urlopen
+        return urlopen(self.url + path, timeout=5).read().decode()
+
     def error(self, code, status, call, *args, **kwargs):
         with self.assertRaises(TA2Error) as ctx:
             call(*args, **kwargs)
@@ -37,6 +41,20 @@ class _ModuleServer(_MissionServer):
 
 
 class ModuleAPI(_ModuleServer, unittest.TestCase):
+    def test_gripper_record_and_list(self):
+        code, rec = self.request("POST", "/api/v1/grippers/record", {"label": "实体", "hand": "right", "seconds": 0.5})
+        self.assertEqual(code, 200, rec)
+        self.assertEqual((rec["label"], rec["hand"]), ("实体", "right"))
+        self.assertGreaterEqual(rec["samples"], 5)
+        self.assertEqual(set(rec["pos_rad"]), {"mean", "min", "max"})
+        self.assertEqual(rec["other_hand"]["hand"], "left")
+        self.assertEqual(self.request("POST", "/api/v1/grippers/record", {"label": ""})[0], 400)
+        self.assertEqual(self.request("POST", "/api/v1/grippers/record", {"label": "x", "hand": "both"})[0], 400)
+        code, listing = self.request("GET", "/api/v1/grippers/records")
+        self.assertEqual(code, 200)
+        self.assertEqual(listing["records"][0]["label"], "实体")
+        self.assertIn("griptable", self.request_text("/"))
+
     def test_arm_move_forward_and_validation(self):
         result = self.client.arm_move("right", forward_cm=5, wait=True, poll=.03)
         self.assertEqual(result["status"], "succeeded", result)
