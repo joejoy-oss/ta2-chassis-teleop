@@ -53,13 +53,15 @@ Single column, Chinese labels, works on a phone. From top to bottom:
   container (`sandbag-step4999-policy`) running and refuses to start while anything else moves.
   Below it, small arm buttons: 起始姿态 (training start pose), 抬起 (raise), 放下 (lower).
 - **底盘**: direction pad 前进 / 后退 / 左 / 右 and 逆时针 / 顺时针. Click (< 0.3 s): 10 cm or 15 deg.
-  Press and hold: 0.05 m/s or 0.2 rad/s until release. The centre 停 is the soft STOP: chassis, paths,
+  Press and hold: 0.10 m/s or 0.2 rad/s until release. The centre 停 is the soft STOP: chassis, paths,
   arm script and VLA run stop, arms hold where they are.
 - **路径与轨迹** (folded): wheel-odometry pose and robot footprint; recording (start / stop / save as CSV,
   copy in `/root/ta2_trails/`, reset origin); paths from `/root/ta2_paths/` plus any loaded from the
   browser. Run follows one path from the current pose (its first point is anchored there); Run all follows
-  them in name order, each from where the previous ended. The robot stops for 10 s at every corner
-  (turn > 45 deg, `CORNER_PAUSE`). Click a row to preview it on the map.
+  them in name order, each from where the previous ended. Corners are driven through without stopping;
+  in Run all the robot stands still for 10 s after each path before starting the next one (`PATH_PAUSE`).
+  Paths do not depend on the page: once started they run to the end even if the phone loses Wi-Fi or
+  the page is closed; only 停 / 急停 end them early. Click a row to preview it on the map.
 - **日志** (folded): recent events, including VLA output and E-STOP results.
 
 CSV format (written by Save, read by Paths): `t_s,x_m,y_m,heading_deg`, x = right, y = forward, heading CCW,
@@ -77,8 +79,9 @@ relative to the origin.
 - Every move requires API mode + chassis enabled and fresh wheel feedback (< 0.3 s).
 - Hold is a dead-man switch: the browser sends a heartbeat every 0.1 s; no heartbeat for 0.4 s -> stop.
   One hold is capped at 10 s.
-- Paths stop when the page stops polling for 1 s, on 5 s without progress, on timeout, or on STOP
-  (Run all is cancelled). Paths longer than 6 m are refused.
+- Paths ignore the page connection; they stop at the end, on 停 / 急停, or on the robot-side checks:
+  stale wheel feedback, 5 s without progress, timeout, or not in API mode. Run all is cancelled the
+  same way. Paths longer than 6 m are refused.
 - If `web_move.py` exits, `teleop.py` sees stdin close, sends zero and exits.
 - `chassis_test.py` limits: planar speed 0.15 m/s (`--vmax` up to 0.3), 0.3 rad/s, 12 s; Ctrl+C sends zero.
 - Commands from `docker exec` do not get SIGHUP when an SSH session drops: keep someone at the e-stop.

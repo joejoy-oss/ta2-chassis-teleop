@@ -2,7 +2,7 @@
 """Long-running TA2 chassis teleop process, driven by web_move.py over stdin/stdout.
 
 Runs inside the openpi-xpu-client container. Reads one JSON command per line on stdin:
-  {"cmd": "step", "dir": "forward"}   move 10 cm (0.05 m/s for 2.04 s); "ccw"/"cw" turn 15 deg in place
+  {"cmd": "step", "dir": "forward"}   move 10 cm (0.10 m/s for 1.04 s); "ccw"/"cw" turn 15 deg in place
   {"cmd": "hold", "dir": "forward"}   keep moving; must be repeated at least every 0.4 s
   {"cmd": "release"} / {"cmd": "stop"} stop now
   {"cmd": "reset_pose"}                set the odometry origin to the current pose
@@ -44,9 +44,9 @@ try:
 except ImportError:
     SignalHandlerOptions = None
 
-SPEED = float(os.environ.get("TELEOP_SPEED", "0.05"))   # m/s (env override for offline tests only)
+SPEED = float(os.environ.get("TELEOP_SPEED", "0.10"))   # m/s (env override for offline tests only); was 0.05
 ROT_SPEED = 0.2               # rad/s, in place
-STEP_DUR = 0.10 / SPEED + 0.04  # 10 cm incl. acceleration/braking loss
+STEP_DUR = 0.10 / SPEED + 0.04  # 10 cm incl. acceleration/braking loss (+0.04 s measured at 0.05 m/s)
 # 15 deg: accel limit 0.3 rad/s^2 and decel 0.6 rad/s^2 lose 0.033 rad -> add 0.167 s
 ROT_STEP_DUR = math.radians(15) / ROT_SPEED + 0.167
 HOLD_TIMEOUT = 0.4            # dead-man: stop if no heartbeat for this long
@@ -64,7 +64,7 @@ J_INV = ((-0.032365, -0.033224, 0.066149),
          (0.078921, 0.07905, 0.07994))
 POSE_PERIOD = 0.1
 # path following
-MIN_SPEED = 0.03              # m/s floor while still away from a waypoint
+MIN_SPEED = 0.06              # m/s floor while still away from a waypoint; was 0.03
 WP_TOL = 0.04                 # m, pass an intermediate waypoint
 END_TOL = 0.02                # m, final waypoint
 HEAD_TOL = math.radians(2)

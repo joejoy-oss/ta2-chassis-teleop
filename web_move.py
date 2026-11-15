@@ -9,7 +9,7 @@ Start:  nohup python3 /root/web_move.py > /root/web_move.log 2>&1 &
 Open:   http://192.168.31.228:8088  (any browser on the robot's router network)
 
 Click a direction (release within 0.3 s): move 10 cm, or turn 15 deg for CCW/CW.
-Press and hold: keep moving at 0.05 m/s (turning at 0.2 rad/s) until release (dead-man: stops
+Press and hold: keep moving at 0.10 m/s (turning at 0.2 rad/s) until release (dead-man: stops
 0.4 s after the browser stops sending heartbeats; a single hold is capped at 10 s).
 
 Trajectory: Start / Stop recording, Save (CSV download + copy in /root/ta2_trails/), Reset
@@ -18,8 +18,10 @@ heading_deg (CCW), all relative to the origin.
 
 Paths: CSV files of that format in /root/ta2_paths/ are listed on the page (Load adds more from
 the browser). Run follows one path from the current pose; Run all follows them in name order,
-each starting where the previous one ended. At every corner of a path (turn > 45 deg) the robot
-stands still for CORNER_PAUSE seconds. A path stops if the page stops polling for 1 s.
+each starting where the previous one ended. Corners are driven through without stopping; in Run all
+the robot stands still for PATH_PAUSE seconds after each path before starting the next one. Paths do
+not depend on the page: once started they run to the end even if the browser closes or the phone
+loses Wi-Fi; only STOP or E-STOP ends them early (plus the robot-side checks in teleop.py).
 
 Arms: "Raise arms" / "Lower arms" / "Start pose" run arm/arm_pose.py (standalone, /outputs/arm/ in the container)
 as a separate process; its output goes to the log. Arms and chassis never move at the same time.
@@ -53,7 +55,7 @@ if os.environ.get("TELEOP_CMD"):              # for offline testing
 DIRS = ("forward", "back", "left", "right", "ccw", "cw")
 TRAIL_DIR = os.environ.get("TRAIL_DIR", "/root/ta2_trails")
 PATH_DIR = os.environ.get("PATH_DIR", "/root/ta2_paths")
-CORNER_PAUSE = float(os.environ.get("CORNER_PAUSE", "10"))   # seconds to stand still at each corner
+PATH_PAUSE = float(os.environ.get("PATH_PAUSE", "10"))   # Run all: seconds to stand still after each path
 ARM_CMD = os.environ.get("ARM_CMD", f"docker exec {CONTAINER} /usr/local/bin/openpi-client-entrypoint.sh "
                                     "python3 -u /outputs/arm/arm_pose.py").split()
 ARM_STOP = os.environ.get("ARM_STOP", f"docker exec {CONTAINER} pkill -INT -f arm_pose.py").split()
@@ -135,14 +137,20 @@ def run_sequence(names):
         path_done.clear()
         path_result["why"] = None
         send("path_cmd", n)
-        if not path_done.wait(timeout=3 * paths[n]["length"] / 0.05 + 30 + 10 * CORNER_PAUSE):
+        if not path_done.wait(timeout=3 * paths[n]["length"] / 0.10 + 30):
             send("stop")
             note(f"run all: {n} did not finish, stopped")
             break
         if path_result["why"] != "path done":
             note(f"run all: stopped at {n} ({path_result['why']})")
             break
-        time.sleep(1.0)
+        if i < len(names) - 1 and PATH_PAUSE > 0:      # stand still between paths, STOP / E-STOP ends it
+            note(f"run all: {n} done, pausing {PATH_PAUSE:.0f} s before {names[i + 1]}")
+            end = time.monotonic() + PATH_PAUSE
+            while time.monotonic() < end and not seq["abort"]:     # only STOP / E-STOP cancel the rest
+                time.sleep(0.1)
+        else:
+            time.sleep(1.0)
     else:
         note("run all: finished")
     seq.update(names=[], i=-1)
@@ -224,7 +232,7 @@ def estop():
 def alive_loop():
     while True:
         time.sleep(0.25)
-        if state["active_path"] and time.monotonic() - last_poll[0] < 1.0:
+        if state["active_path"]:      # paths do not depend on the page; STOP / E-STOP end them
             send("alive")
 
 
@@ -336,7 +344,7 @@ def teleop():
 def send(cmd, d=None):
     p = teleop()
     if cmd == "path_cmd":
-        msg = {"cmd": "path", "name": d, "points": paths[d]["points"], "dwell": CORNER_PAUSE}
+        msg = {"cmd": "path", "name": d, "points": paths[d]["points"], "dwell": 0}   # no stops at corners
     else:
         msg = {"cmd": cmd} if d is None else {"cmd": cmd, "dir": d}
     try:
@@ -450,7 +458,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
   <details id="paths-details" class="card"><summary>路径与轨迹</summary><div class="body">
     <div class="subhead"><h3>路径</h3><div class="tools"><button class="small" id="load" title="加载 CSV 路径文件">加载</button><button class="small" id="runall" title="按名称顺序运行全部路径，每条从上一条终点开始">全部运行</button></div></div>
     <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
-    <div class="plist" id="plist" title="点击路径行预览；路径从当前位置开始，转角停留 10 秒"><div class="prow muted">尚未加载路径</div></div>
+    <div class="plist" id="plist" title="点击路径行预览；路径从当前位置开始；全部运行时每条路径跑完停 10 秒"><div class="prow muted">尚未加载路径</div></div>
     <div class="trajectory">
       <div class="subhead"><h3>轨迹</h3><span id="rec" title="正在录制轨迹">● 录制中</span></div>
       <div id="pose"></div>
@@ -499,7 +507,7 @@ function uiText(value){
     ['no fresh wheel feedback from the robot','尚未收到机器人最新轮速反馈'],['busy, path not started','忙碌中，路径未启动'],
     ['exited rc=','退出码：'],['before running the policy (see log)','，策略尚未运行（详见日志）'],
     ['FSM pause failed rc=','暂停失败，退出码：'],['FSM paused','已暂停'],['E-STOP','急停'],
-    ['time_limit','达到时限'],['path done','路径已完成'],['corner pause','转角停留'],['heartbeat timeout','心跳超时'],
+    ['time_limit','达到时限'],['path done','路径已完成'],['corner pause','转角停留'],[' done, pausing ',' 已完成，停留 '],[' s before ',' 秒后开始 '],['run all: ','全部运行：'],['heartbeat timeout','心跳超时'],
     ['dead-man timeout','心跳超时'],['step done','点按移动已完成'],['hold timeout','长按已达时限'],
     ['page closed or connection lost','页面已关闭或连接中断'],['wheel feedback lost','轮速反馈中断'],
     ['hold limit','长按达到时限'],['stuck: no progress for','移动受阻，未取得进展已持续'],

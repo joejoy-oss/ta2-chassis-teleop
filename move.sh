@@ -12,14 +12,14 @@
 #   ./move.sh stop           shut down the client container safely (never use docker stop)
 # Short forms: f / b / l / r.
 #
-# Speed is fixed at 0.05 m/s; distance 1-50 cm. 3 s countdown before each move (Ctrl+C cancels); Ctrl+C while moving stops at once.
+# Speed is fixed at 0.10 m/s; distance 1-50 cm. 3 s countdown before each move (Ctrl+C cancels); Ctrl+C while moving stops at once.
 # From another machine use -t so Ctrl+C gets through:  ssh -t root@192.168.31.228 ./move.sh forward
 set -e
 SELF=$(readlink -f "$0")
 
 DEPLOY=${DEPLOY:-/data/ta2/software/deploy}
 ROBOT=192.168.31.218
-SPEED=0.05
+SPEED=0.10
 TEST=/outputs/tools/chassis_test.py      # path inside the container = host /root/openpi-xpu/client/outputs/tools/
 
 cd "$DEPLOY"
