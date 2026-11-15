@@ -4,6 +4,7 @@
 #   ./arm.sh check            check mode/state and print the plan, send nothing
 #   ./arm.sh raise [--time 8] both arms to the official zero.py "raised" pose
 #   ./arm.sh lower [--time 8] back to the pose saved by the last raise
+#   ./arm.sh start [--time 8] both arms to the VLA training start pose (arm/train_start_pose.json)
 #
 # Needs: run mode API, both arms enabled and in JOINT control mode (dev config -> Save -> Apply -> reboot).
 # From another machine use -t so Ctrl+C reaches the robot:  ssh -t root@192.168.31.228 ./arm.sh raise
@@ -21,6 +22,6 @@ if ! docker ps --format '{{.Names}}' | grep -qx openpi-xpu-client; then
 fi
 case ${1:-} in
     check)       $R exec python3 $SCRIPT raise --dry-run ;;
-    raise|lower) $R exec python3 $SCRIPT "$@" ;;
-    *) sed -n '2,9p' "$(readlink -f "$0")"; exit 2 ;;
+    raise|lower|start) $R exec python3 $SCRIPT "$@" ;;
+    *) sed -n '2,10p' "$(readlink -f "$0")"; exit 2 ;;
 esac

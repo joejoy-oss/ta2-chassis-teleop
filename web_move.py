@@ -17,7 +17,7 @@ the browser). Run follows one path from the current pose; Run all follows them i
 each starting where the previous one ended. At every corner of a path (turn > 45 deg) the robot
 stands still for CORNER_PAUSE seconds. A path stops if the page stops polling for 1 s.
 
-Arms: "Raise arms" / "Lower arms" run arm/arm_pose.py (standalone, /outputs/arm/ in the container)
+Arms: "Raise arms" / "Lower arms" / "Start pose" run arm/arm_pose.py (standalone, /outputs/arm/ in the container)
 as a separate process; its output goes to the log. Arms and chassis never move at the same time.
 STOP also interrupts the arm script, which then holds where it is and pauses the FSM.
 
@@ -47,7 +47,8 @@ CORNER_PAUSE = float(os.environ.get("CORNER_PAUSE", "10"))   # seconds to stand 
 ARM_CMD = os.environ.get("ARM_CMD", f"docker exec {CONTAINER} /usr/local/bin/openpi-client-entrypoint.sh "
                                     "python3 -u /outputs/arm/arm_pose.py").split()
 ARM_STOP = os.environ.get("ARM_STOP", f"docker exec {CONTAINER} pkill -INT -f arm_pose.py").split()
-ARM_TIME = {"raise": 8, "lower": 15}    # seconds; lower is slower on purpose
+ARM_TIME = {"raise": 8, "lower": 15, "start": 10}    # seconds; lower is slower on purpose
+# start = VLA training start pose (arm/train_start_pose.json, first frame of a training episode)
 paths = {}                  # name -> {"points": [[x, y, th], ...], "length": m, "end": [dx, dy]}
 seq = {"names": [], "i": -1, "abort": False}
 path_done = threading.Event()
@@ -324,7 +325,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%}
   </div>
   <div class="rot"><button data-d="ccw">&#10226; CCW</button><button data-d="cw">CW &#10227;</button></div>
   <div class="panel"><h2><span>Arms</span><span class="tools">
-    <button class="small" id="armraise">Raise arms</button><button class="small" id="armlower">Lower arms (slowly)</button></span></h2>
+    <button class="small" id="armraise">Raise arms</button><button class="small" id="armlower">Lower arms (slowly)</button><button class="small" id="armstart">Start pose</button></span></h2>
     <div class="muted" id="armst" style="padding:6px 12px">arms: idle</div>
   </div>
   <div class="panel paths"><h2><span>Paths</span><span class="tools">
@@ -332,7 +333,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%}
     <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
     <div class="plist" id="plist"><div class="prow muted">No paths loaded</div></div>
   </div>
-  <div class="muted">Arms: raise takes 8 s, lower 15 s (back to the pose saved before raising); arms need joint control mode. Paths stop for 10 s at every corner. Click: move 10 cm / turn 15&deg; in place. Press and hold: keeps moving at 0.05 m/s (turning at 11.5&deg;/s) until you let go, max 10 s per hold. Keep someone at the e-stop.</div>
+  <div class="muted">Arms: raise takes 8 s, lower 15 s (back to the pose saved before raising), Start pose 10 s (VLA training start pose, use before inference); arms need joint control mode. Paths stop for 10 s at every corner. Click: move 10 cm / turn 15&deg; in place. Press and hold: keeps moving at 0.05 m/s (turning at 11.5&deg;/s) until you let go, max 10 s per hold. Keep someone at the e-stop.</div>
 </div>
 <div class="right">
   <div class="panel"><h2>Log</h2><pre id="log"></pre></div>
@@ -405,9 +406,10 @@ fileIn.onchange=async()=>{
     if(r.error)st.textContent=f.name+': '+r.error}
   fileIn.value='';loadPaths();
 };
-const armRaise=document.getElementById('armraise'),armLower=document.getElementById('armlower'),armSt=document.getElementById('armst');
+const armRaise=document.getElementById('armraise'),armLower=document.getElementById('armlower'),armStart=document.getElementById('armstart'),armSt=document.getElementById('armst');
 armRaise.onclick=async()=>{const r=await post('/arm/raise');if(r.error)st.textContent=r.error};
 armLower.onclick=async()=>{const r=await post('/arm/lower');if(r.error)st.textContent=r.error};
+armStart.onclick=async()=>{const r=await post('/arm/start');if(r.error)st.textContent=r.error};
 document.getElementById('runall').onclick=async()=>{const r=await post('/paths/runall');if(r.error)st.textContent=r.error};
 loadPaths();
 
@@ -474,7 +476,7 @@ async function poll(){try{
   if(s.mode_ok===false)t+='  |  robot NOT in API mode / chassis disabled';
   armSt.textContent=s.arm?('arms: '+s.arm+'...'):s.arm_last;
   const still=!s.moving&&!s.seq.length&&!s.arm;
-  armRaise.disabled=!still;armLower.disabled=!still;
+  armRaise.disabled=!still;armLower.disabled=!still;armStart.disabled=!still;
   st.textContent=t+'  (clicks '+s.clicks+', holds '+s.holds+')';
   const busyStep=s.moving&&(s.moving.startsWith('step')||s.moving.startsWith('path'))||s.seq.length>0||!!s.arm;
   const pathBusy=!!s.active_path||s.seq.length>0||!!s.arm;

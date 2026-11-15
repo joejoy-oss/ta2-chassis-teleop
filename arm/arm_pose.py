@@ -4,6 +4,7 @@
 Usage (inside the openpi-xpu-client container):
   python3 arm_pose.py raise [--time 8] [--dry-run]   both arms to the official zero.py pose
   python3 arm_pose.py lower [--time 8] [--dry-run]   back to the pose saved by the last "raise"
+  python3 arm_pose.py start [--time 8] [--dry-run]   to the VLA training start pose (train_start_pose.json)
 
 Interfaces (developer doc 4.1, 4.2, 4.11, 4.13):
   publish   /api/{left,right}_arm/joint_cmd  sensor_msgs/JointState  position = 7 joint angles (rad)
@@ -44,6 +45,7 @@ RAISED = {"left": [0.41, 1.16, -0.47, 0.90, 0.23, -0.15, 0.60],
           "right": [-0.50, -0.92, 0.52, -1.28, 0.32, 0.55, -0.52]}
 LIMITS = {"left": ([-1.8, 0.0, -2.6, 0.25, -1.8, -1.4, -0.7], [1.8, 1.9, 1.3, 2.2, 1.8, 1.4, 0.7]),
           "right": ([-1.8, -1.9, -1.3, -2.2, -1.8, -1.4, -0.7], [1.8, 0.0, 2.6, -0.25, 1.8, 1.4, 0.7])}
+TRAIN_START = os.path.join(os.path.dirname(os.path.abspath(__file__)), "train_start_pose.json")
 SAVE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "arm_start_pose.json")
 CMD_RATE = 100.0          # joint_cmd, Hz
 HB_RATE = 20.0            # fsm/enable heartbeat, Hz
@@ -71,7 +73,7 @@ def minjerk(s):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["raise", "lower"])
+    ap.add_argument("action", choices=["raise", "lower", "start"])
     ap.add_argument("--time", type=float, default=8.0, help="motion time in seconds (stretched if too fast)")
     ap.add_argument("--dry-run", action="store_true", help="check and print the plan, send nothing")
     a = ap.parse_args()
@@ -169,6 +171,13 @@ def main():
 
         if a.action == "raise":
             target = {arm: clip(arm, RAISED[arm]) for arm in ARMS}
+        elif a.action == "start":
+            try:
+                with open(TRAIN_START) as f:
+                    saved = json.load(f)
+                target = {arm: clip(arm, saved[arm]) for arm in ARMS}
+            except (OSError, ValueError, KeyError):
+                raise Abort(f"cannot read training start pose {TRAIN_START}")
         else:
             try:
                 with open(SAVE) as f:
