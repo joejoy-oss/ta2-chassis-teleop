@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NEW = "grasp_v3_step5000_rtc"
+NEW = "grasp_v3_step20000_rtc"
 OLD = "sandbag_v2_step4999_rtc"
 
 
@@ -106,14 +106,14 @@ class ModelSelectionTests(unittest.TestCase):
         self.worker.assert_not_called()
 
     def test_models_and_status_expose_current_selection(self):
-        self.check.return_value.stdout = "/grasp-v3-step5000-policy true\n/sandbag-step4999-policy false\n"
+        self.check.return_value.stdout = "/grasp-v3-step20000-policy true\n/sandbag-step4999-policy false\n"
         self.web.select_model(OLD)
         status, result = self.request("/api/models", "GET")
         self.assertEqual(status, 200)
         self.assertEqual(result["selected"], OLD)
         # Only RTC variants are registered; each retains its policy container.
         self.assertEqual({model["id"]: model["running"] for model in result["models"]},
-                         {key: value["container"] == "grasp-v3-step5000-policy" for key, value in self.web.VLA_MODELS.items()})
+                         {key: value["container"] == "grasp-v3-step20000-policy" for key, value in self.web.VLA_MODELS.items()})
         status, result = self.request("/status", "GET")
         self.assertEqual(result["vla_selection"]["id"], OLD)
         self.assertIsNone(result["vla_running"])
