@@ -62,6 +62,9 @@ class ModuleAPI(_ModuleServer, unittest.TestCase):
         self.assertIn("rule", d)
         self.assertEqual(self.request("GET", "/api/v1/grippers/classify?hand=both")[0], 400)
         self.assertIn("gripclassify", self.request_text("/"))
+        page = self.request_text("/")
+        self.assertIn('id="vlastop" checked', page)                         # big VLA button: stop-on-grasp toggle
+        self.assertIn("stop_on_grasp:true", page)
 
     def test_arm_move_forward_and_validation(self):
         result = self.client.arm_move("right", forward_cm=5, wait=True, poll=.03)

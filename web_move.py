@@ -1236,6 +1236,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
     <p><button id="modelsbtn" type="button" class="small" onclick="location.href='/models'">选择 / 切换模型 →</button></p>
     <p id="vlaconfig" class="status-line">读取模型配置中…</p>
     <button id="vlarun" class="primary" title="回到起始姿态并张开夹爪，取帧后使用当前选定模型抓取" disabled>开始抓取（60 秒）</button>
+    <label class="status-line" title="勾选：抓住（夹着东西并抬高 4 cm，保持 1.5 秒）立即停止；空夹 1 秒或夹着 10 秒不抬也提前结束。不勾：跑满时限或按停止，不做判定。"><input type="checkbox" id="vlastop" checked> 抓到就停（空夹 / 不抬也提前结束）</label>
     <div id="vla-progress" hidden>
       <div class="progress-row"><span id="vlaelapsed" role="status">已运行 0 / 60 s</span><button id="vlastop" class="small">停止</button></div>
       <progress id="vlaprogress" max="60" value="0" aria-label="抓取运行进度" aria-describedby="vlaelapsed"></progress>
@@ -1330,7 +1331,9 @@ function uiText(value){
     ['busy: wait until the robot is still','忙碌中，请等待机器人静止'],['arms are moving','手臂或抓取任务正在运行'],
     ['not in API mode or chassis disabled (or mode unknown yet)','非 API 模式、底盘未启用或模式未知'],
     ['no fresh wheel feedback from the robot','尚未收到机器人最新轮速反馈'],['busy, path not started','忙碌中，路径未启动'],
-    ['exited rc=','退出码：'],['before running the policy (see log)','，策略尚未运行（详见日志）'],
+    ['exited rc=','退出码：'],['grasped (left)','已抓住（左手），已停止'],['grasped (right)','已抓住（右手），已停止'],
+    ['no grasp (','未抓住，已提前结束（'],['left gripper closed on nothing','左爪空夹'],['right gripper closed on nothing','右爪空夹'],
+    ['left gripper holding but not lifted within','左爪夹着但未按时抬起：'],['right gripper holding but not lifted within','右爪夹着但未按时抬起：'],['before running the policy (see log)','，策略尚未运行（详见日志）'],
     ['FSM pause failed rc=','暂停失败，退出码：'],['FSM paused','已暂停'],['E-STOP','急停'],
     ['time_limit','达到时限'],['path done','路径已完成'],['corner pause','转角停留'],[' done, pausing ',' 已完成，停留 '],[' s before ',' 秒后开始 '],['run all: ','全部运行：'],['heartbeat timeout','心跳超时'],
     ['dead-man timeout','心跳超时'],['step done','点按移动已完成'],['hold timeout','长按已达时限'],
@@ -1473,7 +1476,17 @@ function updateRoute(s){
     i<0?title+'准备中…':title+'执行 '+s.seq[i]+'（'+(i+1)+'/'+s.seq.length+'）';
 }
 let selectedVlaId=null,vlaSeconds=60;
-vlaBtn.onclick=async()=>{if(!selectedVlaId)return;const r=await post('/vla/'+encodeURIComponent(selectedVlaId));if(r.error)st.textContent=uiText(r.error)};
+const vlaStop=document.getElementById('vlastop');
+try{const saved=localStorage.getItem('ta2_vla_stop_on_grasp');if(saved!==null)vlaStop.checked=saved==='1'}catch(e){}
+vlaStop.onchange=()=>{try{localStorage.setItem('ta2_vla_stop_on_grasp',vlaStop.checked?'1':'0')}catch(e){}};
+vlaBtn.onclick=async()=>{
+  if(!selectedVlaId)return;
+  if(!vlaStop.checked){const r=await post('/vla/'+encodeURIComponent(selectedVlaId));if(r.error)st.textContent=uiText(r.error);return}
+  try{const r=await fetch('/api/v1/actions',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({type:'vla.grasp',params:{model:selectedVlaId,stop_on_grasp:true}})});
+    const d=await r.json();if(!r.ok)st.textContent=uiText((d.error&&d.error.message)||String(r.status));
+  }catch(e){st.textContent=uiText(String(e))}
+};
 const vlaProgress=document.getElementById('vla-progress'),vlaMeter=document.getElementById('vlaprogress'),vlaElapsed=document.getElementById('vlaelapsed');
 let vlaStarted=null;
 function updateVlaProgress(){
