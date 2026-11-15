@@ -16,6 +16,7 @@ ATTEMPTS = int(os.environ.get("ATTEMPTS", "5"))
 ATTEMPT_S = float(os.environ.get("ATTEMPT_S", "45"))
 PROMPT = os.environ.get("PROMPT", "抓取沙包")
 PORT = int(os.environ.get("MISSION_PORT", os.environ.get("POLICY_PORT", "8000")))
+RTC = os.environ.get("MISSION_RTC", "0") == "1"   # async Real-Time Chunking for the grasp attempts (vla_run.sh RTC=1)
 ARRIVE_PAUSE = float(os.environ.get("ARRIVE_PAUSE", "10"))
 PLACE_CM = float(os.environ.get("PLACE_CM", "10"))
 HOLD_POS_MIN = float(os.environ.get("HOLD_POS_MIN", "0.06"))  # calibrated: empty-closed is -0.047 (R) / -0.059 (L) rad
@@ -73,9 +74,11 @@ def grasp_update(previous, sample, t):
 
 
 def options(params):
-    if set(params) - {"attempts", "prompt", "port"}:
-        raise ValueError("mission parameters: attempts, prompt, port (all optional)")
-    cfg = {"attempts": ATTEMPTS, "prompt": PROMPT, "port": PORT, **params}
+    if set(params) - {"attempts", "prompt", "port", "rtc"}:
+        raise ValueError("mission parameters: attempts, prompt, port, rtc (all optional)")
+    cfg = {"attempts": ATTEMPTS, "prompt": PROMPT, "port": PORT, "rtc": RTC, **params}
+    if type(cfg["rtc"]) is not bool:
+        raise ValueError("rtc must be true or false")
     if type(cfg["attempts"]) is not int or not 1 <= cfg["attempts"] <= ATTEMPTS:
         raise ValueError(f"attempts must be an integer from 1 to {ATTEMPTS}")
     if type(cfg["port"]) is not int or not 1 <= cfg["port"] <= 65535:
@@ -266,7 +269,8 @@ class Mission:
         mid = uuid.uuid4().hex[:12]
         self.state = {"id": mid, "status": "running", "step": "preflight", "hand": None,
                       "attempt": 0, "attempts": cfg["attempts"], "pause_until": None,
-                      "result": None, "attempt_results": [], "durations": {}}
+                      "result": None, "attempt_results": [], "durations": {},
+                      "config": {k: cfg.get(k) for k in ("model", "model_name", "port", "prompt", "rtc")}}
         self.active_step, self.step_started = None, None
         self.dropped = False
         self.drop_since = None
@@ -434,7 +438,8 @@ class Mission:
                 try:
                     rc, hand = self._execute(self.h.VLA_CMD + [tag, str(ATTEMPT_S), "1.0"],
                                              kind="vla", attempt=True,
-                                             env={**os.environ, "PROMPT": cfg["prompt"], "PORT": str(cfg["port"]), "RESET": "1"})
+                                             env={**os.environ, "PROMPT": cfg["prompt"], "PORT": str(cfg["port"]), "RESET": "1",
+                                                  "RTC": "1" if cfg.get("rtc") else "0"})
                     entry.update(result="succeeded" if hand else "failed", hand=hand, returncode=rc)
                 except Exception:
                     entry.update(result="aborted" if self.cancel.is_set() else "failed")

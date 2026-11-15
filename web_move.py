@@ -211,9 +211,16 @@ def start_arm(pose, action=None):
     threading.Thread(target=run_arm, args=(pose, action), daemon=True).start()
 
 
+def model_rtc(model):
+    """RTC entries run through a *_rtc.sh wrapper (RTC=1); an explicit "rtc" key wins."""
+    return bool(model.get("rtc", any(str(c).endswith("_rtc.sh") for c in model["command"])))
+
+
 def public_model(model_id):
     model = VLA_MODELS[model_id]
-    return {key: model[key] for key in ("id", "name", "training", "prompt", "seconds", "speed")}
+    out = {key: model[key] for key in ("id", "name", "training", "prompt", "seconds", "speed")}
+    out["rtc"] = model_rtc(model)
+    return out
 
 
 def model_services():
@@ -672,7 +679,8 @@ ACTION_PARAMS = {
     "arm.pose": {"pose": list(ARM_TIME)},
     "vla.grasp": {},
     "odom.reset": {},
-    "mission.run": {"attempts": "optional integer", "prompt": "optional string", "port": "optional integer"},
+    "mission.run": {"attempts": "optional integer", "prompt": "optional string", "port": "optional integer",
+                    "rtc": "optional boolean (default: the selected model's mode)"},
 }
 
 
@@ -690,10 +698,13 @@ def start_action(body):
             merged["prompt"] = sel["prompt"]
         if "port" not in merged and "MISSION_PORT" not in os.environ and "POLICY_PORT" not in os.environ:
             merged["port"] = sel["port"]
+        if "rtc" not in merged and "MISSION_RTC" not in os.environ:
+            merged["rtc"] = model_rtc(sel)
         try:
             cfg = mission_module.options(merged)
         except ValueError as exc:
             raise APIError(400, "BAD_REQUEST", str(exc)) from exc
+        cfg.update(model=state["vla_selected"], model_name=sel["name"])
     elif set(params) != set(spec) or any(not isinstance(v, str) for v in params.values()):
         raise APIError(400, "BAD_REQUEST", "required parameters: " + ", ".join(spec))
     for key, allowed in spec.items():
@@ -1032,7 +1043,9 @@ const missionBtn=document.getElementById('missionrun'),missionSt=document.getEle
 missionBtn.onclick=async()=>{missionBtn.disabled=true;try{const r=await post('/mission/run');if(r.error)missionSt.textContent=uiText(typeof r.error==='string'?r.error:r.error.message)}catch(e){missionSt.textContent='无法开始任务'}};
 function updateMission(s){
   const m=s.mission||{},active=!!m.active;
-  if(s.vla_selection)document.getElementById('missionmodel').textContent='当前模型：'+s.vla_selection.name+'（'+s.vla_selection.prompt+'）';
+  const mc=m.config,mm=document.getElementById('missionmodel');
+  if(active&&mc)mm.textContent='本次使用：'+(mc.model_name||('端口 '+mc.port))+'（'+mc.prompt+'）· '+(mc.rtc?'RTC 流畅执行':'同步执行');
+  else if(s.vla_selection)mm.textContent='将使用：'+s.vla_selection.name+'（'+s.vla_selection.prompt+'）· '+(s.vla_selection.rtc?'RTC 流畅执行':'同步执行')+' · 在上方「抓取模型」里切换';
   missionBtn.disabled=active||!s.connected||s.mode_ok!==true||!!s.estop||!!s.moving||s.seq.length>0||!!s.arm||!!s.vla;
   document.querySelectorAll('#missionsteps li').forEach(el=>{
     el.classList.toggle('mission-current',el.dataset.step===m.step);
