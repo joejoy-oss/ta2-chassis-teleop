@@ -1182,13 +1182,17 @@ def grasp_flow_svg():
     p.append(_gf_edge([(cx, 400), (cx, 432)]))
     ys = [482, 622, 762, 902]
     texts = [[f"夹住且抬高 ≥ {LIFT} cm", f"连续保持 {SUCC} s？"],
-             ["空夹，且 {} s 内".format(EMP), "没有再张开？"],
+             ["空夹后 {} s 仍不张开".format(EMP), "（卡住）？"],
              ["夹住超过 {} s".format(NOL), "仍未抬起？"],
              [f"{LIM} s 到时，", "或 VLA 脚本退出？"]]
     for i, (y, t) in enumerate(zip(ys, texts)):
         p.append(_gf_dec(cx, y, dw, dh, t))
         if i < 3:
             p.append(_gf_edge([(cx, y + dh / 2), (cx, ys[i + 1] - dh / 2)], "否", (cx + 10, y + dh / 2 + 22), "start"))
+    # an empty close is not a failure: the policy keeps running and may reopen to try again
+    p.append(f'<polyline class="edge dash" points="{cx + dw / 2},{ys[1]} 560,{ys[1]}"/>')
+    p.append(_gf_box(560, ys[1] - 46, 250, 92, ["空夹 ≠ 失败", "~VLA 不停，继续推理", "~模型张开重抓 → 计时清零", f"~{EMP} s 内一直闭合不动才算卡住"],
+                     "info"))
     # success
     p.append(_gf_edge([(cx + dw / 2, ys[0]), (575, ys[0])], "是", (cx + dw / 2 + 14, ys[0] - 8), "start"))
     p.append(_gf_box(575, ys[0] - 33, 225, 66, ["停止 VLA，原地保持夹紧", "~抓取成功"], "ok", "success", rx=33))
@@ -1236,7 +1240,8 @@ main{max-width:900px;margin:0 auto;padding:16px}a{color:var(--hi)}h1{font-size:2
 .ok rect{fill:var(--ok-f);stroke:var(--ok-s)}.ok text{fill:var(--ok-s)}
 .bad rect{fill:var(--bad-f);stroke:var(--bad-s)}.bad text{fill:var(--bad-s)}
 .node.on rect,.node.on polygon{stroke:var(--hi);stroke-width:3;fill:var(--hi-f)}
-.edge{fill:none;stroke:var(--edge);stroke-width:1.5}.ahead{fill:var(--edge)}
+.edge{fill:none;stroke:var(--edge);stroke-width:1.5}.edge.dash{stroke-dasharray:4 4}
+.info rect{fill:var(--hi-f);stroke:var(--hi);stroke-dasharray:5 4}.info text{fill:var(--hi)}.info .sub{fill:var(--fg)}.ahead{fill:var(--edge)}
 .lbl{fill:var(--muted);font-size:12px;font-weight:600}
 .notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-top:12px}
 .note{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
@@ -1421,7 +1426,16 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
     </div>
   </div></section>
   <section class="card"><div class="body">
-    <h2>夹爪标定记录</h2>
+    <h2>底盘</h2>
+    <div class="pad">
+      <span></span><button data-d="forward" disabled>▲ 前进</button><span></span>
+      <button data-d="left" disabled>◀ 左</button><button id="stop" title="停止当前底盘、路径、手臂或抓取任务">停</button><button data-d="right" disabled>▶ 右</button>
+      <span></span><button data-d="back" disabled>▼ 后退</button><span></span>
+    </div>
+    <div class="rot"><button data-d="ccw" disabled>⟲ 逆时针</button><button data-d="cw" disabled>⟳ 顺时针</button></div>
+    <p class="hint">点按 10 cm / 15°，长按连续移动（最长 10 秒）</p>
+  </div></section>
+  <details id="grip-details" class="card"><summary>夹爪标定记录</summary><div class="body">
     <p class="status-line">只读：记录所选夹爪约 2 秒内的位置、力矩、手腕高度（不发任何指令）。先让夹爪夹好，再点对应按钮。</p>
     <div class="grip-rec"><select id="griphand"><option value="right">右爪</option><option value="left">左爪</option></select>
       <button class="small" data-glabel="实体">记录：实体</button><button class="small" data-glabel="薄片">记录：薄片</button><button class="small" data-glabel="空夹">记录：空夹</button>
@@ -1432,9 +1446,8 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
     <p id="gripverdict" class="status-line" role="status" style="font-size:16px;font-weight:700"></p>
     <ol id="gripverdicts" class="status-line" style="font-size:12px;margin:0"></ol>
     <div style="overflow-x:auto"><table id="griptable" style="font-size:12px;border-collapse:collapse;width:100%"></table></div>
-  </div></section>
-  <section class="card"><div class="body">
-    <h2>路线</h2>
+  </div></details>
+  <details id="route-details" class="card"><summary>路线</summary><div class="body">
     <div class="route-buttons">
       <button data-route="g2r" disabled><span class="route-title"><span class="route-dot green" aria-hidden="true"></span>绿 → 红<span class="route-dot red" aria-hidden="true"></span></span><small>001 → 停 10 秒 → 002</small></button>
       <button data-route="r2g" disabled><span class="route-title"><span class="route-dot red" aria-hidden="true"></span>红 → 绿<span class="route-dot green" aria-hidden="true"></span></span><small>003 → 停 10 秒 → 004</small></button>
@@ -1442,17 +1455,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
     <p id="routest" class="status-line" role="status">上次：尚未运行</p>
     <p class="hint">路径从当前位置出发：先把机器人停在起点、朝向与录制时一致</p>
     <p class="hint">开始后仅接受急停；关闭页面或手机断网仍会继续执行</p>
-  </div></section>
-  <section class="card"><div class="body">
-    <h2>底盘</h2>
-    <div class="pad">
-      <span></span><button data-d="forward" disabled>▲ 前进</button><span></span>
-      <button data-d="left" disabled>◀ 左</button><button id="stop" title="停止当前底盘、路径、手臂或抓取任务">停</button><button data-d="right" disabled>▶ 右</button>
-      <span></span><button data-d="back" disabled>▼ 后退</button><span></span>
-    </div>
-    <div class="rot"><button data-d="ccw" disabled>⟲ 逆时针</button><button data-d="cw" disabled>⟳ 顺时针</button></div>
-    <p class="hint">点按 10 cm / 15°，长按连续移动（最长 10 秒）</p>
-  </div></section>
+  </div></details>
   <details id="paths-details" class="card"><summary>路径与轨迹</summary><div class="body">
     <div class="subhead"><h3>路径</h3><div class="tools"><button class="small" id="load" title="加载 CSV 路径文件">加载</button><button class="small" id="runall" title="按名称顺序运行全部路径，每条从上一条终点开始">全部运行</button></div></div>
     <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
