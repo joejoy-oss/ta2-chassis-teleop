@@ -15,12 +15,13 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 ATTEMPTS = int(os.environ.get("ATTEMPTS", "5"))
-ATTEMPT_S = float(os.environ.get("ATTEMPT_S", "45"))
+ATTEMPT_S = float(os.environ.get("ATTEMPT_S", "60"))   # s of policy execution per attempt (reset + probe come before it)
 PROMPT = os.environ.get("PROMPT", "抓取沙包")
 PORT = int(os.environ.get("MISSION_PORT", os.environ.get("POLICY_PORT", "8000")))
 RTC = os.environ.get("MISSION_RTC", "0") == "1"   # async Real-Time Chunking for the grasp attempts (vla_run.sh RTC=1)
 ARRIVE_PAUSE = float(os.environ.get("ARRIVE_PAUSE", "10"))
 PLACE_CM = float(os.environ.get("PLACE_CM", "10"))
+PLACE_FORWARD_CM = float(os.environ.get("PLACE_FORWARD_CM", "10"))   # step 6: reach out before lowering; 0 skips
 # "Holding something" = gripper pushing closed (effort) but stopped clearly above its empty-closed position.
 # Empty-closed is very repeatable (right: -0.0485 +/- 0.0004 rad over 5 trials, 2026-11-15 17:17; left: -0.059,
 # one earlier reading -- recalibrate with the page's 夹爪标定记录). Solid and thin objects both count as held.
@@ -821,6 +822,13 @@ class Mission:
         self._route("r2g")
         self._pause()
         self._step("place")
+        if PLACE_FORWARD_CM > 0:      # same as the handoff (7.4): reach out first, then lower, then release
+            rc, _ = self._execute(self.h.ARM_MOVE_CMD + [self.state["hand"], f"{PLACE_FORWARD_CM:g}", "0", "0"], kind="move")
+            if rc != 0:
+                raise MissionFailure(f"arm_move exited {rc}")
+            self._check()
+            if self.dropped or not holding(self.monitor.frame[self.state["hand"]], self.state["hand"]):
+                raise MissionFailure("object dropped while reaching out")
         rc, _ = self._execute(self.h.ARM_DOWN_CMD + [self.state["hand"], f"{PLACE_CM:g}"], kind="down")
         if rc != 0:
             raise MissionFailure(f"arm_down exited {rc}")

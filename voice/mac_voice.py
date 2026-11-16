@@ -22,14 +22,17 @@ HERE = Path(__file__).resolve().parent
 BIND = os.environ.get("VOICE_BIND", "127.0.0.1")
 PORT = int(os.environ.get("VOICE_PORT", "8096"))
 HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
-MIC = os.environ.get("VOICE_MIC", ":MacBook Air麦克风")      # ffmpeg avfoundation device
+# ffmpeg avfoundation devices, "|"-separated; all listen at once and the first one to hear the command wins.
+# The iPhone microphone (Continuity, same Apple ID, Wi-Fi + Bluetooth on) shows up as its own device.
+MICS = [m for m in os.environ.get("VOICE_MIC", ":MacBook Air麦克风|:“iPhone”的麦克风").split("|") if m.strip()]
 LISTEN_MAX = float(os.environ.get("VOICE_LISTEN_MAX", "125"))  # s; the mission gives up after 120 s (7.1)
 RATE = 16000
 KEYWORDS = HERE / "keywords_mac.txt"
 lock = threading.Lock()
-state = {"state": "idle", "detail": "", "level": None, "heard": None, "since": time.time()}
+kws_lock = threading.Lock()          # one spotter, one stream per microphone
+state = {"state": "idle", "detail": "", "level": None, "heard": None, "mic": None, "mics": {}, "since": time.time()}
 generation = [0]
-capture = [None]
+captures = []
 
 
 def set_state(name, detail="", **extra):
@@ -51,53 +54,106 @@ KWS = None
 
 
 def stop_capture():
-    p = capture[0]
-    if p and p.poll() is None:
-        p.terminate()
-        try:
-            p.wait(2)
-        except subprocess.TimeoutExpired:
-            p.kill()
+    for p in list(captures):
+        if p.poll() is None:
+            p.terminate()
+            try:
+                p.wait(2)
+            except subprocess.TimeoutExpired:
+                p.kill()
+    captures.clear()
 
 
-def listen(gen):
-    stream = KWS.create_stream()
-    cmd = ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "avfoundation", "-i", MIC,
+def label(mic):
+    return mic.lstrip(":")
+
+
+def still_listening(gen):
+    return generation[0] == gen and state["state"] == "listening"
+
+
+def mic_loop(gen, mic, end):
+    """Listen on one microphone until the command is heard (by any microphone), time runs out or it fails.
+    Returns an error text when this microphone is unusable, else None."""
+    with kws_lock:
+        stream = KWS.create_stream()
+    cmd = ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "avfoundation", "-i", mic,
            "-ac", "1", "-ar", str(RATE), "-f", "s16le", "pipe:1"]
     try:
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except OSError as exc:
-        return set_state("failed", f"无法启动录音：{exc}")
-    capture[0] = p
-    end, silent_since = time.monotonic() + LISTEN_MAX, time.monotonic()
+        return f"无法启动录音：{exc}"
+    captures.append(p)
     try:
-        while generation[0] == gen and time.monotonic() < end:
-            chunk = p.stdout.read(3200)          # 0.1 s
-            if not chunk:
-                err = p.stderr.read().decode(errors="replace").strip()
-                if generation[0] == gen:
-                    set_state("failed", "录音中断：" + (err[-200:] or f"ffmpeg 退出 {p.poll()}"))
-                return
-            x = np.frombuffer(chunk, dtype="<i2").astype(np.float32) / 32768
-            rms = float(np.sqrt(np.mean(x * x))) if x.size else 0.0
-            with lock:
-                state["level"] = round(20 * math.log10(max(rms, 1e-6)), 1)
-            if rms > 0:
-                silent_since = time.monotonic()
-            elif time.monotonic() - silent_since > 3:       # exact zeros = macOS refused the microphone
-                return set_state("failed", "麦克风没有声音：请在 系统设置→隐私与安全性→麦克风 允许「终端」，再重启服务")
+        return read_mic(gen, mic, end, p, stream)
+    finally:                              # each microphone closes its own capture when it stops listening
+        if p.poll() is None:
+            p.terminate()
+            try:
+                p.wait(2)
+            except subprocess.TimeoutExpired:
+                p.kill()
+        if p in captures:
+            captures.remove(p)
+
+
+def read_mic(gen, mic, end, p, stream):
+    silent_since = time.monotonic()
+    while still_listening(gen) and time.monotonic() < end:
+        chunk = p.stdout.read(3200)          # 0.1 s
+        if not chunk:
+            if not still_listening(gen):
+                return None
+            err = p.stderr.read().decode(errors="replace").strip()
+            return "录音中断：" + (err[-160:] or f"ffmpeg 退出 {p.poll()}")
+        x = np.frombuffer(chunk, dtype="<i2").astype(np.float32) / 32768
+        rms = float(np.sqrt(np.mean(x * x))) if x.size else 0.0
+        db = round(20 * math.log10(max(rms, 1e-6)), 1)
+        with lock:
+            state["mics"][label(mic)] = db
+            state["level"] = max(v for v in state["mics"].values() if isinstance(v, float))
+        if rms > 0:
+            silent_since = time.monotonic()
+        elif time.monotonic() - silent_since > 3:       # exact zeros = no permission or no device behind it
+            return "没有声音（终端没有麦克风权限，或设备没连上）"
+        with kws_lock:
             stream.accept_waveform(RATE, x)
+            heard = None
             while KWS.is_ready(stream):
                 KWS.decode_stream(stream)
-                heard = KWS.get_result(stream)
-                if heard and generation[0] == gen:
-                    set_state("recognized", "已识别：" + heard, heard=heard)
-                    subprocess.Popen(["afplay", str(HERE / "reply.wav")])
-                    return
-        if generation[0] == gen:
-            set_state("failed", f"{LISTEN_MAX:g} 秒内没有听到口令")
-    finally:
-        stop_capture()
+                heard = KWS.get_result(stream) or heard
+        if heard:
+            with lock:
+                first = generation[0] == gen and state["state"] == "listening"
+            if first:
+                set_state("recognized", f"已识别（{label(mic)}）：{heard}", heard=heard, mic=label(mic))
+                subprocess.Popen(["afplay", str(HERE / "reply.wav")])
+            return None
+    return None
+
+
+def listen(gen):
+    end, errors = time.monotonic() + LISTEN_MAX, {}
+
+    def run(mic):
+        err = mic_loop(gen, mic, end)
+        if err:
+            errors[mic] = err
+            with lock:
+                state["mics"][label(mic)] = "不可用：" + err
+            print(time.strftime("%H:%M:%S"), label(mic), err, flush=True)
+
+    threads = [threading.Thread(target=run, args=(m,), daemon=True) for m in MICS]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    if not still_listening(gen):
+        return
+    if len(errors) == len(MICS):
+        set_state("failed", "所有麦克风都不可用：" + "；".join(f"{label(m)} {e}" for m, e in errors.items()))
+    else:
+        set_state("failed", f"{LISTEN_MAX:g} 秒内没有听到口令")
 
 
 def announce(gen):
@@ -140,7 +196,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/rehearse":
             generation[0] += 1
             stop_capture()
-            set_state("listening", "正在听", heard=None)
+            set_state("listening", "正在听", heard=None, mic=None, mics={})
             threading.Thread(target=listen, args=(generation[0],), daemon=True).start()
         elif self.path == "/confirm":
             generation[0] += 1
@@ -155,5 +211,5 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     KWS = spotter()
-    print(f"TA2 voice service on {BIND}:{PORT}, microphone {MIC}", flush=True)
+    print(f"TA2 voice service on {BIND}:{PORT}, microphones {[label(m) for m in MICS]}", flush=True)
     ThreadingHTTPServer((BIND, PORT), Handler).serve_forever()

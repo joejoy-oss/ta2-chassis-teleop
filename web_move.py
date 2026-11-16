@@ -43,6 +43,7 @@ import atexit
 import collections
 import copy
 import datetime
+import html
 import json
 import os
 import shlex
@@ -1133,69 +1134,142 @@ class _Host:
 
 mission = mission_module.Mission(sys.modules.get(__name__) or _Host())
 
+def _gf_text(cx, cy, lines, size=14, lh=19):
+    y0 = cy - (len(lines) - 1) * lh / 2 + size * 0.35
+    spans = "".join('<tspan x="{}" y="{:.1f}"{}>{}</tspan>'.format(
+        cx, y0 + i * lh, ' class="sub"' if line.startswith("~") else "", html.escape(line.lstrip("~")))
+        for i, line in enumerate(lines))
+    return f'<text text-anchor="middle" font-size="{size}">{spans}</text>'
+
+
+def _gf_box(x, y, w, h, lines, cls="proc", phase=None, rx=6):
+    ph = f' data-phase="{phase}"' if phase else ""
+    return (f'<g class="node {cls}"{ph}><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{rx}"/>'
+            + _gf_text(x + w / 2, y + h / 2, lines) + "</g>")
+
+
+def _gf_dec(cx, cy, w, h, lines, phase="judge"):
+    pts = f"{cx},{cy - h / 2} {cx + w / 2},{cy} {cx},{cy + h / 2} {cx - w / 2},{cy}"
+    return f'<g class="node dec" data-phase="{phase}"><polygon points="{pts}"/>' + _gf_text(cx, cy, lines, 13, 17) + "</g>"
+
+
+def _gf_edge(points, label=None, at=None, anchor="middle"):
+    pts = " ".join(f"{x},{y}" for x, y in points)
+    out = f'<polyline class="edge" points="{pts}" marker-end="url(#ah)"/>'
+    if label:
+        lx, ly = at
+        out += f'<text class="lbl" x="{lx}" y="{ly}" text-anchor="{anchor}">{html.escape(label)}</text>'
+    return out
+
+
+def grasp_flow_svg():
+    m = mission_module
+    g = lambda v: f"{v:g}"
+    N, LIM, LIFT, SUCC = g(m.ATTEMPTS), g(m.ATTEMPT_S), g(m.LIFT_MIN * 100), g(m.HOLD_PERSIST)
+    EMP, NOL = g(m.EMPTY_PERSIST), g(m.NO_LIFT_S)
+    cx, bx, bw = 330, 180, 300            # main column
+    dw, dh = 300, 100                      # decisions
+    p = []
+    p.append(_gf_box(205, 16, 250, 46, ["开始抓取", "~大按钮 · 全流程第 3 步 · 语音 7.2"], "term", rx=23))
+    p.append(_gf_edge([(cx, 62), (cx, 92)]))
+    p.append(_gf_box(bx, 92, bw, 44, [f"第 i 次尝试，i = 1（最多 {N} 次）"], "proc"))
+    p.append(_gf_edge([(cx, 136), (cx, 166)]))
+    p.append(_gf_box(bx, 166, bw, 54, ["① 复位", "~回起始姿态，两只夹爪张开（约 6 s）"], "proc", "reset"))
+    p.append(_gf_edge([(cx, 220), (cx, 250)]))
+    p.append(_gf_box(bx, 250, bw, 54, ["② 取帧", "~读取一帧相机图像与关节状态"], "proc", "probe"))
+    p.append(_gf_edge([(cx, 304), (cx, 334)]))
+    p.append(_gf_box(bx, 334, bw, 66, ["③ VLA 推理执行", f"~最多 {LIM} s（从第一个动作计时）", "~限速 1.0 rad/s，每帧判定左右手"], "proc", "policy"))
+    p.append(_gf_edge([(cx, 400), (cx, 432)]))
+    ys = [482, 622, 762, 902]
+    texts = [[f"夹住且抬高 ≥ {LIFT} cm", f"连续保持 {SUCC} s？"],
+             ["空夹，且 {} s 内".format(EMP), "没有再张开？"],
+             ["夹住超过 {} s".format(NOL), "仍未抬起？"],
+             [f"{LIM} s 到时，", "或 VLA 脚本退出？"]]
+    for i, (y, t) in enumerate(zip(ys, texts)):
+        p.append(_gf_dec(cx, y, dw, dh, t))
+        if i < 3:
+            p.append(_gf_edge([(cx, y + dh / 2), (cx, ys[i + 1] - dh / 2)], "否", (cx + 10, y + dh / 2 + 22), "start"))
+    # success
+    p.append(_gf_edge([(cx + dw / 2, ys[0]), (575, ys[0])], "是", (cx + dw / 2 + 14, ys[0] - 8), "start"))
+    p.append(_gf_box(575, ys[0] - 33, 225, 66, ["停止 VLA，原地保持夹紧", "~抓取成功"], "ok", "success", rx=33))
+    # "no" at the last check: keep inferring (loop back to ③)
+    p.append(_gf_edge([(cx + dw / 2, ys[3]), (835, ys[3]), (835, 367), (bx + bw, 367)], "否：继续推理",
+                      (cx + dw / 2 + 14, ys[3] - 10), "start"))
+    # "yes" at checks 2-4 -> attempt failed
+    for y in ys[1:]:
+        p.append(f'<polyline class="edge" points="{cx - dw / 2},{y} 120,{y}"/>')
+        p.append(f'<text class="lbl" x="{cx - dw / 2 - 12}" y="{y - 8}" text-anchor="end">是</text>')
+    yf = 1000
+    p.append(_gf_edge([(120, ys[1]), (120, yf + 27), (bx, yf + 27)]))
+    p.append(_gf_box(bx, yf, bw, 54, ["停止 VLA，本次失败", "~记录原因：卡住 / 不抬 / 到时"], "bad", "fail"))
+    p.append(_gf_edge([(cx, yf + 54), (cx, 1090)]))
+    yd = 1140
+    p.append(_gf_dec(cx, yd, 260, 96, ["还有剩余次数？", "（i < N）"], "retry"))
+    p.append(_gf_edge([(cx - 130, yd), (60, yd), (60, 193), (bx, 193)], "是：i = i + 1，重新复位", (66, yd - 10), "start"))
+    p.append(_gf_edge([(cx, yd + 48), (cx, 1222)], "否", (cx + 10, yd + 70), "start"))
+    p.append(_gf_box(190, 1222, 280, 54, ["回起始姿态，张开夹爪", "~任务失败"], "bad term-bad", rx=27))
+    return ('<svg viewBox="0 0 860 1290" role="img" aria-label="抓取流程图" xmlns="http://www.w3.org/2000/svg">'
+            '<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" '
+            'orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ahead"/></marker></defs>'
+            + "".join(p) + "</svg>")
+
+
 GRASP_FLOW_PAGE = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>抓取流程图</title><style>
-:root{--bg:#f5f5f4;--fg:#252729;--muted:#64686c;--panel:#fff;--line:#dcdedc;--accent:#455c68;--ok:#2e7d32;--bad:#c62828;--hi:#fff4d6}
-@media (prefers-color-scheme:dark){:root{--bg:#17191a;--fg:#e5e7e8;--muted:#a3a9ad;--panel:#202426;--line:#3e4548;--accent:#a7bdc8;--ok:#8fd19e;--bad:#ff8a80;--hi:#3a3320}}
+:root{--bg:#f6f7f9;--fg:#1f2933;--muted:#616e7c;--panel:#fff;--line:#d9dee5;--edge:#7b8794;
+--proc-f:#fff;--proc-s:#52606d;--dec-f:#fffaeb;--dec-s:#b7791f;--ok-f:#ebf8f0;--ok-s:#2f855a;--bad-f:#fdeeee;--bad-s:#c53030;
+--term-f:#eef2f7;--term-s:#3e4c59;--hi:#2b6cb0;--hi-f:#e6f0fb}
+@media (prefers-color-scheme:dark){:root{--bg:#121417;--fg:#e4e7eb;--muted:#9aa5b1;--panel:#1b1f24;--line:#323a43;--edge:#8a96a3;
+--proc-f:#1b1f24;--proc-s:#9aa5b1;--dec-f:#2a2416;--dec-s:#d69e2e;--ok-f:#16261d;--ok-s:#68d391;--bad-f:#2b1818;--bad-s:#fc8181;
+--term-f:#1f262e;--term-s:#cbd2d9;--hi:#63b3ed;--hi-f:#162636}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif}
-main{max-width:780px;margin:0 auto;padding:16px}h1{font-size:20px;margin:4px 0}a{color:var(--accent)}
-.sub{color:var(--muted);margin:0 0 12px}#now{margin:8px 0 14px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel)}
-.box{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:0 0 26px}
-.box:not(.last)::after{content:'↓';position:absolute;left:50%;bottom:-24px;transform:translateX(-50%);color:var(--muted);font-size:18px}
-.box h2{font-size:15px;margin:0 0 2px}.box p,.box ul{margin:2px 0}.box ul{padding-left:18px}.box small{color:var(--muted)}
-.loop{border:2px dashed var(--accent);border-radius:14px;padding:12px 12px 2px;margin:0 0 26px;position:relative}
-.loop>.tag{position:absolute;top:-12px;left:14px;background:var(--bg);padding:0 6px;color:var(--accent);font-weight:700}
-.loop::after{content:'↓';position:absolute;left:50%;bottom:-24px;transform:translateX(-50%);color:var(--muted);font-size:18px}
-.box.on{background:var(--hi);border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:0 0 26px}
-.grid .box{margin:0}.grid .box::after{display:none}
-.ok{border-left:5px solid var(--ok)}.bad{border-left:5px solid var(--bad)}.ok h2{color:var(--ok)}.bad h2{color:var(--bad)}
-.ends{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}.ends .box{margin:0}.ends .box::after{display:none}
-.side{margin-top:14px}.side .box::after{display:none}
+main{max-width:900px;margin:0 auto;padding:16px}a{color:var(--hi)}h1{font-size:20px;margin:6px 0 2px}
+.sub-h{color:var(--muted);margin:0 0 12px}
+#now{display:flex;gap:10px;align-items:center;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);margin-bottom:12px}
+#now .dot{width:9px;height:9px;border-radius:50%;background:var(--edge)}#now.live .dot{background:var(--hi);box-shadow:0 0 0 4px var(--hi-f)}
+.chart{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;overflow-x:auto}
+.chart svg{display:block;width:100%;min-width:560px;height:auto;font-family:inherit}
+.node rect,.node polygon{stroke-width:1.4}
+.node text{fill:var(--fg);font-weight:600}.node .sub{fill:var(--muted);font-weight:400;font-size:12px}
+.proc rect{fill:var(--proc-f);stroke:var(--proc-s)}.term rect{fill:var(--term-f);stroke:var(--term-s)}
+.dec polygon{fill:var(--dec-f);stroke:var(--dec-s)}
+.ok rect{fill:var(--ok-f);stroke:var(--ok-s)}.ok text{fill:var(--ok-s)}
+.bad rect{fill:var(--bad-f);stroke:var(--bad-s)}.bad text{fill:var(--bad-s)}
+.node.on rect,.node.on polygon{stroke:var(--hi);stroke-width:3;fill:var(--hi-f)}
+.edge{fill:none;stroke:var(--edge);stroke-width:1.5}.ahead{fill:var(--edge)}
+.lbl{fill:var(--muted);font-size:12px;font-weight:600}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-top:12px}
+.note{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.note h2{font-size:14px;margin:0 0 4px}.note ul{margin:0;padding-left:18px}.note li{margin:2px 0}
 </style></head><body><main>
-<p><a href="/">← 返回 TA2 遥控</a></p>
+<a href="/">← 返回 TA2 遥控</a>
 <h1>抓取流程图</h1>
-<p class="sub">大按钮「开始抓取」、全流程第 3 步、语音模块 7.2 都走这同一套流程（同一份代码）。图中数字直接取自当前运行的代码。</p>
-<div id="now" role="status">当前：未在抓取</div>
-
-<div class="box"><h2>入口</h2>
-<p>大按钮「开始抓取」（最多 5 / 3 / 1 次）· 全流程第 3 步（到达红区停 __PAUSE__ 秒后，最多 __ATTEMPTS__ 次）· 语音模块 7.2</p></div>
-
-<div class="loop"><span class="tag">第 i 次尝试（i = 1 … N）</span>
-<div class="box" data-phase="reset"><h2>① 复位</h2><p>手臂回起始姿态，两只夹爪张开（约 6 秒）。每一次尝试都会先复位。</p></div>
-<div class="box" data-phase="probe"><h2>② 取帧</h2><p>读取一帧相机图像和关节状态，确认数据正常。</p></div>
-<div class="box" data-phase="policy"><h2>③ VLA 推理执行</h2><p>按选中的模型推理并执行动作，本次最多 __LIMIT__ 秒，速度上限 1.0 rad/s。</p>
-<small>启动后 8 秒内没收到相机 / 关节数据：什么都不动，自动重来一次。</small></div>
-<div class="box last" data-phase="judge"><h2>④ 边执行边判定（左右手各一份，每帧一次）</h2><ul>
-<li>夹爪在这一次里还没张开过（≤ __OPEN__ rad）→ 不判定；每次重新张开，计时全部清零</li>
-<li><b>夹住</b> = 夹爪用力（力 ≤ __EFF__）且停在空夹位置以上（右 ≥ __HR__ rad，左 ≥ __HL__ rad），实体、薄片都算</li>
-<li><b>空夹</b> = 夹爪用力且合拢到空夹位置以下</li>
-<li>手臂数据中断或过期 → 所有计时清零</li></ul></div>
+<p class="sub-h">大按钮「开始抓取」、全流程第 3 步、语音模块 7.2 共用这一套流程。图中参数取自当前运行的代码。</p>
+<div id="now" role="status"><span class="dot"></span><span id="nowtext">当前：未在抓取</span></div>
+<div class="chart">__SVG__</div>
+<div class="notes">
+<div class="note"><h2>判定定义（左右手各自独立，每帧一次）</h2><ul>
+<li><b>夹住</b>：夹爪用力（力 ≤ __EFF__）且停在空夹位置以上（右 ≥ __HR__ rad，左 ≥ __HL__ rad），实体、薄片都算</li>
+<li><b>空夹</b>：夹爪用力且合拢到空夹位置以下</li>
+<li>夹爪张开（&gt; __OPEN__ rad）后才开始判定；每次重新张开，计时全部清零</li>
+<li>空夹后模型自己张开重抓：继续推理，不打断</li>
+<li>另一只手正夹着东西时，这只手空夹不算失败</li></ul></div>
+<div class="note"><h2>抓住之后</h2><ul>
+<li>大按钮：结束，原地保持夹紧</li><li>全流程：第 4 步收臂（保持夹紧）</li><li>语音模块：7.3 收臂</li></ul></div>
+<div class="note"><h2>任何时候</h2><ul>
+<li>急停 / 停止：立即中止</li><li>手臂数据丢失、底盘断开、退出 API 模式：任务失败</li>
+<li>启动后 __START__ s 没收到相机 / 关节数据：不动作，自动重来一次</li></ul></div>
 </div>
-
-<div class="grid">
-<div class="box ok" data-phase="success"><h2>✓ 成功</h2><p>夹住，且比第一次合拢时<b>抬高 ≥ __LIFT__ cm</b>，连续保持 __SUCC__ 秒</p><small>→ 立即停止 VLA，原地保持夹紧</small></div>
-<div class="box bad"><h2>✗ 空夹</h2><p>空夹持续 __EMPTY__ 秒（另一只手正夹着东西时不算）</p><small>→ 立即停止 VLA → 下一次</small></div>
-<div class="box bad"><h2>✗ 夹着不抬</h2><p>夹住超过 __NOLIFT__ 秒，仍没满足成功条件</p><small>→ 立即停止 VLA → 下一次</small></div>
-<div class="box bad"><h2>✗ 到时 / 出错</h2><p>__LIMIT__ 秒到时没抓住，或 VLA 脚本出错退出</p><small>→ 下一次</small></div>
-</div>
-
-<div class="ends">
-<div class="box ok"><h2>抓住之后</h2><p>大按钮：结束，原地夹紧不动<br>全流程：进入第 4 步收臂（保持夹紧）<br>语音模块：进入 7.3 收臂</p></div>
-<div class="box bad"><h2>N 次都没抓住</h2><p>手臂回起始姿态、张开夹爪，本次任务失败</p></div>
-</div>
-
-<div class="side"><div class="box"><h2>任何时候</h2><p>急停 / 停止 → 立即中止 · 手臂数据丢失、底盘断开、退出 API 模式 → 任务失败</p></div></div>
 </main><script>
-const NOW=document.getElementById('now');
 const PH={starting:'准备中',reset:'① 复位中',probe:'② 取帧中',policy:'③ VLA 推理执行中',policy_retry:'③ 启动没收到数据，重来一次',stopping:'判定已出，正在停止 VLA',ended:'本次已结束'};
 async function poll(){
   let L=null,m={};
-  try{m=(await (await fetch('/api/v1/state',{cache:'no-store'})).json()).mission||{};L=m.live}catch(e){NOW.textContent='读取状态失败';return}
-  const running=L&&m.active&&L.phase!=='ended';
-  document.querySelectorAll('[data-phase]').forEach(b=>{const p=b.dataset.phase;
-    b.classList.toggle('on',!!running&&(p===L.phase||(p==='policy'&&L.phase==='policy_retry')||(p==='judge'&&L.phase==='policy')||(p==='success'&&L.phase==='stopping'&&(L.note||'').startsWith('抓住'))))});
-  NOW.textContent=running?'当前：第 '+L.attempt+'/'+L.attempts+' 次 · '+(PH[L.phase]||L.phase)+' · 本次 '+Math.round(L.elapsed_s||0)+' 秒':
+  try{m=(await (await fetch('/api/v1/state',{cache:'no-store'})).json()).mission||{};L=m.live}catch(e){document.getElementById('nowtext').textContent='读取状态失败';return}
+  const run=!!(L&&m.active&&L.phase!=='ended'),ok=L&&L.phase==='stopping'&&(L.note||'').startsWith('抓住');
+  const on=run?{reset:['reset'],probe:['probe'],policy:['policy','judge'],policy_retry:['policy'],stopping:[ok?'success':'fail']}[L.phase]||[]:[];
+  document.querySelectorAll('[data-phase]').forEach(n=>n.classList.toggle('on',on.includes(n.dataset.phase)));
+  document.getElementById('now').classList.toggle('live',run);
+  document.getElementById('nowtext').textContent=run?'当前：第 '+L.attempt+'/'+L.attempts+' 次 · '+(PH[L.phase]||L.phase)+' · 本次 '+Math.round(L.elapsed_s||0)+' s':
     L?'最近一次：第 '+L.attempt+'/'+L.attempts+' 次 · '+(L.verdict==='succeeded'?'抓住（'+(L.hand==='left'?'左手':'右手')+'）':'未抓住')+(m.result?' · 任务结果：'+m.result:''):'当前：未在抓取';
 }
 poll();setInterval(poll,700);
@@ -1204,10 +1278,9 @@ poll();setInterval(poll,700);
 
 def grasp_flow_page():
     m = mission_module
-    vals = {"__PAUSE__": m.ARRIVE_PAUSE, "__ATTEMPTS__": m.ATTEMPTS, "__LIMIT__": m.ATTEMPT_S, "__OPEN__": m.HOLD_POS_MAX,
-            "__EFF__": m.HOLD_EFF_MAX, "__HR__": round(m.hold_threshold("right"), 4), "__HL__": round(m.hold_threshold("left"), 4),
-            "__LIFT__": m.LIFT_MIN * 100, "__SUCC__": m.HOLD_PERSIST, "__EMPTY__": m.EMPTY_PERSIST, "__NOLIFT__": m.NO_LIFT_S}
-    page = GRASP_FLOW_PAGE
+    vals = {"__OPEN__": m.HOLD_POS_MAX, "__EFF__": m.HOLD_EFF_MAX, "__HR__": round(m.hold_threshold("right"), 4),
+            "__HL__": round(m.hold_threshold("left"), 4), "__START__": 8}
+    page = GRASP_FLOW_PAGE.replace("__SVG__", grasp_flow_svg())
     for k, v in vals.items():
         page = page.replace(k, f"{v:g}")
     return page
@@ -1325,7 +1398,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
     <button id="missionrun2" class="primary" disabled>开始全流程 v2（1–7，含语音交互）</button>
     <button id="missionvoice" disabled>单独运行第 7 步</button>
     <button id="missionhandoff" disabled title="与第 7 步的 7.4–7.7 完全相同：用当前夹着东西的那只手前伸 10 cm → 下降 10 cm → 松开 → 确认已松开。需要正好一只手夹着东西；全流程里这之前会先收臂（起始姿态·保持夹爪）">单独放下（前伸+下降+松开）</button>
-    <ol id="missionsteps"><li data-step="preflight">预检</li><li data-step="g2r">绿→红</li><li data-step="grasp">抓取 0/5</li><li data-step="stow">收臂</li><li data-step="r2g">红→绿</li><li data-step="place">放下</li><li data-step="voice"><span>语音交互模块（全流程 v2）</span><ol id="voicesub"></ol></li></ol>
+    <ol id="missionsteps"><li data-step="preflight">预检</li><li data-step="g2r">绿→红</li><li data-step="grasp">抓取 0/5</li><li data-step="stow">收臂</li><li data-step="r2g">红→绿</li><li data-step="place">放下（前伸 10 cm → 下降 10 cm → 松开）</li><li data-step="voice"><span>语音交互模块（全流程 v2）</span><ol id="voicesub"></ol></li></ol>
     <div id="missionlive" class="glive" role="status" hidden></div>
     <p id="missionstatus" class="status-line" role="status">尚未运行</p>
   </div></section>

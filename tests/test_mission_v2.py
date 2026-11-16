@@ -89,7 +89,7 @@ class FlowV2(_VoiceServer, unittest.TestCase):
         self.assertEqual(m["voice"]["hand"], "right")
         self.assertEqual(self.commands("arm"), [["start_hold"], ["open_right"], ["start_hold"], ["open_right"]])
         self.assertEqual(self.commands("down"), [["right", "10"], ["right", "10"]])
-        self.assertEqual(self.commands("move"), [["right", "10", "0", "0"]])   # step 7 only: reach out, then lower
+        self.assertEqual(self.commands("move"), [["right", "10", "0", "0"]] * 2)   # step 6 and step 7: reach out, then lower
         self.assertEqual(len(self.commands("vla")), 2)
         self.assertEqual(self.voice.posts(), ["/rehearse", "/confirm"])
         self.assertTrue(all(h == "127.0.0.1:8096" for _, _, h in self.voice.calls))

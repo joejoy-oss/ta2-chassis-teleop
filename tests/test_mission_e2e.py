@@ -123,6 +123,10 @@ class LeftSuccess(_MissionServer, unittest.TestCase):
         self.assertEqual([r["result"] for r in m["attempt_results"]], ["failed", "failed", "succeeded"])
         self.assertEqual(self.commands("arm"), [["start_hold"], ["open_left"]])
         self.assertEqual(self.commands("down"), [["left", "10"]])
+        self.assertEqual(self.commands("move"), [["left", "10", "0", "0"]])        # step 6: reach out, then lower
+        order = [r["kind"] for r in map(json.loads, (self.dir / "commands.jsonl").read_text().splitlines())
+                 if r["kind"] in ("move", "down")]
+        self.assertEqual(order, ["move", "down"])
         self.assertEqual(self.commands("vla_env"), [["测试抓取", "8001", "1"]] * 3)
         self.assertEqual(len(self.commands("vla_interrupted")), 1)
         self.assertEqual(list(m["durations"]), ["preflight", "g2r", "grasp", "stow", "r2g", "place"])
@@ -245,8 +249,9 @@ class GraspOnlyRetry(_MissionServer, unittest.TestCase):
         self.assertIn('id="missionlive"', html)
         flow = urlopen(self.url + "/grasp-flow", timeout=5).read().decode()
         self.assertIn('href="/grasp-flow"', html)
-        for text in ("抓取流程图", "① 复位", "② 取帧", "③ VLA 推理执行", "✓ 成功", "✗ 空夹", "✗ 夹着不抬", "抬高 ≥ 4 cm",
-                     "本次最多 4 秒", "右 ≥ -0.0385 rad"):              # ATTEMPT_S=4 in this test env
+        for text in ("抓取流程图", "<svg", "① 复位", "② 取帧", "③ VLA 推理执行", "夹住且抬高 ≥ 4 cm", "连续保持 1.5 s？",
+                     "没有再张开？", "否：继续推理", "是：i = i + 1，重新复位", "最多 4 s（从第一个动作计时）",
+                     "右 ≥ -0.0385 rad"):                                   # ATTEMPT_S=4 in this test env
             self.assertIn(text, flow)
         self.assertNotIn("__", flow.split("<script>")[0])
         self.assertIn("flow:'grasp'", html)
@@ -275,6 +280,7 @@ class RightSuccess(_MissionServer, unittest.TestCase):
         self.assertEqual(m["hand"], "right")
         self.assertEqual(self.commands("arm"), [["start_hold"], ["open_right"]])
         self.assertEqual(self.commands("down"), [["right", "10"]])
+        self.assertEqual(self.commands("move"), [["right", "10", "0", "0"]])
 
 
 class ScriptFailures(_MissionServer, unittest.TestCase):
