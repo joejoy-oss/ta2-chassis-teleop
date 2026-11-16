@@ -28,8 +28,8 @@ PLACE_FORWARD_CM = float(os.environ.get("PLACE_FORWARD_CM", "10"))   # step 6: r
 EMPTY_CLOSED = {"right": float(os.environ.get("HOLD_EMPTY_RIGHT", "-0.0485")),
                 "left": float(os.environ.get("HOLD_EMPTY_LEFT", "-0.059"))}
 HOLD_MARGIN = float(os.environ.get("HOLD_MARGIN", "0.01"))     # rad above empty-closed (25x its noise)
-EMPTY_PERSIST = float(os.environ.get("EMPTY_PERSIST", "5.0"))   # s closed on nothing without reopening -> attempt ended
-# (5 s, not 1 s: an empty close no longer cuts the policy off; if it reopens to try again, the timer restarts)
+EMPTY_PERSIST = float(os.environ.get("EMPTY_PERSIST", "2.0"))   # s closed on nothing without reopening -> attempt ended
+# (2 s: a policy that reopens to try again restarts the timer; real runs lift the empty gripper instead, 2026-11-16)
 NO_LIFT_S = float(os.environ.get("NO_LIFT_S", "10"))            # s holding without the lift -> attempt failed
 THIN_SOLID_SPLIT = float(os.environ.get("THIN_SOLID_SPLIT", "0.25"))  # rad; right: thin <= 0.13, solid >= 0.37
 HOLD_POS_MAX = float(os.environ.get("HOLD_POS_MAX", "0.75"))
