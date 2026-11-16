@@ -200,6 +200,7 @@ class StalePreflight(_MissionServer, unittest.TestCase):
 
 class EmptyGraspFailsFast(_MissionServer, unittest.TestCase):
     scenario = "empty_fast"
+    extra_env = {"EMPTY_PERSIST": "1"}          # the fake attempt lasts 4 s; this tests the early stop itself
 
     def test_empty_attempts_end_after_about_a_second(self):
         aid = self.start(attempts=2)
@@ -253,6 +254,7 @@ class GraspOnlyRetry(_MissionServer, unittest.TestCase):
 
 class GraspOnlyAllFail(_MissionServer, unittest.TestCase):
     scenario = "empty_fast"
+    extra_env = {"EMPTY_PERSIST": "1"}
 
     def test_grasp_flow_all_fail_resets_arms(self):
         aid = TA2Client(self.url).run_mission(attempts=2, flow="grasp")

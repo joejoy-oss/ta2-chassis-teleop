@@ -27,7 +27,8 @@ PLACE_CM = float(os.environ.get("PLACE_CM", "10"))
 EMPTY_CLOSED = {"right": float(os.environ.get("HOLD_EMPTY_RIGHT", "-0.0485")),
                 "left": float(os.environ.get("HOLD_EMPTY_LEFT", "-0.059"))}
 HOLD_MARGIN = float(os.environ.get("HOLD_MARGIN", "0.01"))     # rad above empty-closed (25x its noise)
-EMPTY_PERSIST = float(os.environ.get("EMPTY_PERSIST", "1.0"))   # s closed on nothing -> attempt failed at once
+EMPTY_PERSIST = float(os.environ.get("EMPTY_PERSIST", "5.0"))   # s closed on nothing without reopening -> attempt ended
+# (5 s, not 1 s: an empty close no longer cuts the policy off; if it reopens to try again, the timer restarts)
 NO_LIFT_S = float(os.environ.get("NO_LIFT_S", "10"))            # s holding without the lift -> attempt failed
 THIN_SOLID_SPLIT = float(os.environ.get("THIN_SOLID_SPLIT", "0.25"))  # rad; right: thin <= 0.13, solid >= 0.37
 HOLD_POS_MAX = float(os.environ.get("HOLD_POS_MAX", "0.75"))
@@ -108,7 +109,7 @@ def grasp_update(previous, sample, t, side=None):
 
     success: holding something (solid or thin) AND lifted >= LIFT_MIN above the first close height, for
              HOLD_PERSIST seconds without a break.
-    empty:   closed on nothing for EMPTY_PERSIST seconds -> the attempt can be ended at once.
+    empty:   closed on nothing for EMPTY_PERSIST seconds without reopening (stuck) -> the attempt can be ended.
     no_lift: holding for NO_LIFT_S seconds without reaching success -> the attempt can be ended.
     held:    holding right now (lets the caller ignore an empty other hand while this one holds).
     A fresh detector is used for each attempt. Nothing is judged until the gripper has been seen open in

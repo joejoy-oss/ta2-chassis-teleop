@@ -119,6 +119,17 @@ class GraspTests(unittest.TestCase):
         self.assertFalse(self.sequence([(0, sample(pos=-0.0485, eff=-1.71)), (.5, sample(pos=1.05, eff=.2)),
                                         (1.2, sample(pos=-0.0485, eff=-1.71))])["empty"])
 
+    def test_empty_close_then_reopen_keeps_the_attempt(self):
+        # default 5 s: a policy that closes on nothing and reopens within that time keeps running (no stop)
+        self.assertEqual(EMPTY_PERSIST, 5.0)
+        frames = [(0, sample(pos=1.05, eff=.2))]
+        frames += [(.1 + i / 10, sample(pos=-0.0485, eff=-1.71)) for i in range(40)]        # 4 s closed on nothing
+        frames += [(4.2, sample(pos=1.05, eff=.2))]                                         # reopens: timers reset
+        frames += [(4.3 + i / 10, sample(pos=-0.0485, eff=-1.71)) for i in range(40)]       # another 4 s empty
+        self.assertFalse(self.sequence(frames)["empty"])
+        frames += [(8.4 + i / 10, sample(pos=-0.0485, eff=-1.71)) for i in range(12)]      # stays closed > 5 s: stuck
+        self.assertTrue(self.sequence(frames)["empty"])
+
     def test_thin_grasp_lifted_succeeds(self):
         frames = [(0, sample(pos=-.03, eff=-1.73))] + [(i / 10, sample(pos=-.03, eff=-1.73, z=-.24)) for i in range(1, 18)]
         state = self.sequence(frames, "right")
