@@ -40,22 +40,24 @@ MONITOR_TIMEOUT = float(os.environ.get("MONITOR_TIMEOUT", "0.6"))
 SCRIPT_TIMEOUT = float(os.environ.get("SCRIPT_TIMEOUT", "90"))
 SIDES = ("left", "right")
 # Full flow v2 = steps 1-6 + step 7 "voice interaction module" (flow "voice" runs only step 7, for debugging).
-FLOWS = ("v1", "v2", "voice", "grasp")      # grasp = step 3 alone (attempts with retry), stops holding
+FLOWS = ("v1", "v2", "voice", "grasp", "handoff")   # grasp = step 3 alone (stops holding); handoff = 7.4-7.7 alone
 VOICE_BRIDGE = os.environ.get("VOICE_BRIDGE", "http://127.0.0.1:18096")   # Mac voice service via ssh -R
 VOICE_BRIDGE_HOST = os.environ.get("VOICE_BRIDGE_HOST", "127.0.0.1:8096")
 VOICE_LISTEN_S = float(os.environ.get("VOICE_LISTEN_S", "120"))
 VOICE_ANNOUNCE_S = float(os.environ.get("VOICE_ANNOUNCE_S", "60"))
 VOICE_RELEASE_S = float(os.environ.get("VOICE_RELEASE_S", "5"))
 HANDOFF_CM = float(os.environ.get("HANDOFF_CM", "10"))
+HANDOFF_FORWARD_CM = float(os.environ.get("HANDOFF_FORWARD_CM", "10"))   # reach out before lowering; 0 skips
 OPEN_MIN = float(os.environ.get("OPEN_MIN", "0.9"))   # rad; open is about 1.05, empty-closed about -0.05
 VOICE_STEPS = (
     ("7.1", "识别口令", "Mac 语音端 /rehearse → /status"),
     ("7.2", "真机抓取（抓住即停）", "VLA + 抓取成功判定（同第 3 步）"),
     ("7.3", "收臂（保持夹紧）", "arm start_hold（同第 4 步）"),
-    ("7.4", f"下降 {HANDOFF_CM:g} cm", "arm_down.sh（同第 6 步）"),
-    ("7.5", "松开夹爪", "arm open_<手>（同第 6 步）"),
-    ("7.6", "确认交接", "夹爪读数：张开且未夹持"),
-    ("7.7", "完成播报", "Mac 语音端 /confirm"),
+    ("7.4", f"前伸 {HANDOFF_FORWARD_CM:g} cm", "arm_move.sh（同手臂「前送」）"),
+    ("7.5", f"下降 {HANDOFF_CM:g} cm", "arm_down.sh（同第 6 步）"),
+    ("7.6", "松开夹爪", "arm open_<手>（同第 6 步）"),
+    ("7.7", "确认交接", "夹爪读数：张开且未夹持"),
+    ("7.8", "完成播报", "Mac 语音端 /confirm"),
 )
 
 
@@ -161,7 +163,7 @@ def options(params):
         raise ValueError("mission parameters: attempts, prompt, port, rtc, flow (all optional)")
     cfg = {"attempts": ATTEMPTS, "prompt": PROMPT, "port": PORT, "rtc": RTC, "flow": "v1", **params}
     if cfg["flow"] not in FLOWS:
-        raise ValueError("flow must be v1, v2 or voice")
+        raise ValueError("flow must be v1, v2, voice, grasp or handoff")
     if type(cfg["rtc"]) is not bool:
         raise ValueError("rtc must be true or false")
     if type(cfg["attempts"]) is not int or not 1 <= cfg["attempts"] <= ATTEMPTS:
@@ -267,6 +269,8 @@ class Mission:
         self.active_step = None
         self.step_started = None
         self.preflight_seconds = 0.0
+        self.handoff_hand = None
+        self._vcur = 0
 
     @property
     def running(self):
@@ -346,9 +350,10 @@ class Mission:
                 raise MissionFailure("chassis is not connected")
             if self.h.state["mode_ok"] is not True:
                 raise MissionFailure("robot is not in API mode")
-            self.h.check_policy(port=cfg["port"])
+            if cfg.get("flow") != "handoff":          # handoff alone does not run the VLA
+                self.h.check_policy(port=cfg["port"])
             missing = [n for n in ("001", "002", "003", "004") if n not in self.h.paths]
-            if cfg.get("flow") in ("voice", "grasp"):
+            if cfg.get("flow") in ("voice", "grasp", "handoff"):
                 missing = []        # step 7 alone does not drive the chassis
             if cfg.get("flow") in ("v2", "voice"):
                 try:
@@ -359,7 +364,13 @@ class Mission:
                 raise MissionFailure("missing paths: " + ", ".join(missing))
             self.detecting = self.carrying = False
             self._new_monitor()
-            if any(holding(self.monitor.frame[s], s) for s in SIDES):
+            held = [s for s in SIDES if holding(self.monitor.frame[s], s)]
+            if cfg.get("flow") == "handoff":
+                if len(held) != 1:      # handoff alone starts from a grasp: exactly one hand holds the object
+                    raise MissionFailure("handoff needs exactly one gripper holding an object (holding: "
+                                         + (", ".join(held) or "none") + ")")
+                self.handoff_hand = held[0]
+            elif held:
                 raise MissionFailure("a gripper is already holding an object")
             self._check()
             self.preflight_seconds = time.monotonic() - began
@@ -464,7 +475,7 @@ class Mission:
         # vla_run.sh = arm.sh start (arm_pose.py) -> live_observation_probe.py -> guarded_grasp.py: stop all of it,
         # or a reset still moving in the container would race the next attempt's reset.
         pattern = "guarded_grasp.py|arm_pose.py|live_observation_probe.py" if kind == "vla" else "arm_pose.py"
-        override = {"vla": "VLA_CMD", "down": "ARM_DOWN_CMD", "arm": "ARM_CMD"}[kind]
+        override = {"vla": "VLA_CMD", "down": "ARM_DOWN_CMD", "move": "ARM_MOVE_CMD", "arm": "ARM_CMD"}[kind]
         if not os.environ.get(override):
             subprocess.run(self.h.DEXEC + ["pkill", "-INT", "-f", pattern],
                            capture_output=True, timeout=5)
@@ -500,7 +511,8 @@ class Mission:
                 self._check()
                 rc = self.command.poll()
                 if rc is not None:
-                    return rc, None
+                    # A grasp confirmed just as the run ended (its 1.5 s hold straddling the time limit) still counts.
+                    return rc, (self.success_hand if attempt else None)
                 if attempt and self.success_hand:
                     hand = self.success_hand
                     self.detecting = False
@@ -579,9 +591,9 @@ class Mission:
         self._event("voice_step", id=sub["id"], status=status, detail=sub["detail"])
 
     def _voice(self, cfg):
-        """Step 7, voice interaction module: 7.1 listen ... 7.7 announce. Each sub-step must succeed."""
+        """Step 7, voice interaction module: 7.1 listen ... 7.8 announce. Each sub-step must succeed."""
         self._step("voice")
-        v, cur = self.state["voice"], 0
+        v, self._vcur = self.state["voice"], 0
         try:
             # 7.1 the recipient asks for the bag
             self._voice_sub(0, "running", "Mac 正在听")
@@ -600,7 +612,7 @@ class Mission:
                 self.cancel.wait(0.2)
             self._voice_sub(0, "succeeded", "已识别口令")
             # 7.2 grasp the bag from the table (same attempts and detector as step 3)
-            cur = 1
+            self._vcur = 1
             self._voice_sub(1, "running", "抓住即停")
             hand = self._grasp_attempts(cfg, f"mission_{self.state['id']}_v", v["attempt_results"])
             if hand is None:
@@ -609,7 +621,7 @@ class Mission:
             v["hand"] = self.state["hand"] = hand
             self._voice_sub(1, "succeeded", "已抓住（" + ("左手" if hand == "left" else "右手") + "）")
             # 7.3 stow, gripper kept closed
-            cur = 2
+            self._vcur = 2
             self._voice_sub(2, "running")
             self._arm("start_hold")
             self._check()
@@ -617,39 +629,10 @@ class Mission:
                 raise MissionFailure("7.3 object dropped after stow")
             self.drop_since, self.dropped, self.carrying = None, False, True
             self._voice_sub(2, "succeeded")
-            # 7.4 lower toward the recipient's hand
-            cur = 3
-            self._voice_sub(3, "running")
-            rc, _ = self._execute(self.h.ARM_DOWN_CMD + [hand, f"{HANDOFF_CM:g}"], kind="down")
-            if rc != 0:
-                raise MissionFailure(f"7.4 arm_down exited {rc}")
-            self._check()
-            if self.dropped or not holding(self.monitor.frame[hand], hand):
-                raise MissionFailure("7.4 object dropped before release")
-            self._voice_sub(3, "succeeded")
-            # 7.5 release (only the grasping hand)
-            cur = 4
-            self._voice_sub(4, "running")
-            self.carrying = False      # opening is intentional from here on
-            self._arm("open_" + hand)
-            self._check()
-            self._voice_sub(4, "succeeded")
-            # 7.6 handover confirmed: that gripper is open and holds nothing
-            cur = 5
-            self._voice_sub(5, "running")
-            deadline = time.monotonic() + VOICE_RELEASE_S
-            while True:
-                self._check()
-                f = self.monitor.frame[hand]
-                if finite(f.get("grip_pos")) and f["grip_pos"] >= OPEN_MIN and not holding(f, hand):
-                    break
-                if time.monotonic() >= deadline:
-                    raise MissionFailure(f"7.6 gripper not confirmed open/empty (pos {f.get('grip_pos')})")
-                self.cancel.wait(0.05)
-            self._voice_sub(5, "succeeded", f"夹爪 {f['grip_pos']:.2f} rad，未夹持")
-            # 7.7 completion announcement on the Mac speaker
-            cur = 6
-            self._voice_sub(6, "running")
+            self._handoff(hand)
+            # 7.8 completion announcement on the Mac speaker
+            self._vcur = 7
+            self._voice_sub(7, "running")
             self._bridge("POST", "/confirm", {})
             deadline = time.monotonic() + VOICE_ANNOUNCE_S
             while True:
@@ -658,14 +641,61 @@ class Mission:
                 if state == "done":
                     break
                 if state == "failed":
-                    raise MissionFailure("7.7 announcement failed")
+                    raise MissionFailure("7.8 announcement failed")
                 if time.monotonic() >= deadline:
-                    raise MissionFailure("7.7 announcement timeout")
+                    raise MissionFailure("7.8 announcement timeout")
                 self.cancel.wait(0.2)
-            self._voice_sub(6, "succeeded", "播报完成")
+            self._voice_sub(7, "succeeded", "播报完成")
         except BaseException:
-            self._voice_sub(cur, "failed")
+            self._voice_sub(self._vcur, "failed")
             raise
+
+    def _handoff(self, hand):
+        """7.4 reach out, 7.5 lower, 7.6 release, 7.7 confirm. Shared by step 7 and flow "handoff" (alone).
+        The caller has checked that `hand` holds the object and set carrying."""
+        # 7.4 reach out toward the recipient (straight line, gripper kept closed)
+        self._vcur = 3
+        self._voice_sub(3, "running")
+        if HANDOFF_FORWARD_CM > 0:
+            rc, _ = self._execute(self.h.ARM_MOVE_CMD + [hand, f"{HANDOFF_FORWARD_CM:g}", "0", "0"], kind="move")
+            if rc != 0:
+                raise MissionFailure(f"7.4 arm_move exited {rc}")
+            self._check()
+            if self.dropped or not holding(self.monitor.frame[hand], hand):
+                raise MissionFailure("7.4 object dropped while reaching out")
+            self._voice_sub(3, "succeeded")
+        else:
+            self._voice_sub(3, "succeeded", "已跳过（HANDOFF_FORWARD_CM=0）")
+        # 7.5 lower toward the recipient's hand
+        self._vcur = 4
+        self._voice_sub(4, "running")
+        rc, _ = self._execute(self.h.ARM_DOWN_CMD + [hand, f"{HANDOFF_CM:g}"], kind="down")
+        if rc != 0:
+            raise MissionFailure(f"7.5 arm_down exited {rc}")
+        self._check()
+        if self.dropped or not holding(self.monitor.frame[hand], hand):
+            raise MissionFailure("7.5 object dropped before release")
+        self._voice_sub(4, "succeeded")
+        # 7.6 release (only the grasping hand)
+        self._vcur = 5
+        self._voice_sub(5, "running")
+        self.carrying = False      # opening is intentional from here on
+        self._arm("open_" + hand)
+        self._check()
+        self._voice_sub(5, "succeeded")
+        # 7.7 handover confirmed: that gripper is open and holds nothing
+        self._vcur = 6
+        self._voice_sub(6, "running")
+        deadline = time.monotonic() + VOICE_RELEASE_S
+        while True:
+            self._check()
+            f = self.monitor.frame[hand]
+            if finite(f.get("grip_pos")) and f["grip_pos"] >= OPEN_MIN and not holding(f, hand):
+                break
+            if time.monotonic() >= deadline:
+                raise MissionFailure(f"7.7 gripper not confirmed open/empty (pos {f.get('grip_pos')})")
+            self.cancel.wait(0.05)
+        self._voice_sub(6, "succeeded", f"夹爪 {f['grip_pos']:.2f} rad，未夹持")
 
     def _run(self, cfg, action):
         status, reason = "failed", "mission did not finish"
@@ -684,11 +714,26 @@ class Mission:
                     self._arm("start")
                     raise MissionFailure("all grasp attempts failed; arms reset")
                 self.state["hand"] = hand
+            elif flow == "handoff":
+                # 7.4-7.7 alone (reach out, lower, release, confirm) with the hand that holds the object now.
+                self._step("handoff")
+                hand = self.state["hand"] = self.state["voice"]["hand"] = self.handoff_hand
+                for k in range(3):
+                    self._voice_sub(k, "skipped", "单独放下：未执行")
+                self.drop_since, self.dropped, self.carrying = None, False, True
+                self._vcur = 3
+                try:
+                    self._handoff(hand)
+                except BaseException:
+                    self._voice_sub(self._vcur, "failed")
+                    raise
+                for k in range(7, len(VOICE_STEPS)):
+                    self._voice_sub(k, "skipped", "单独放下：未执行")
             elif flow != "voice":
                 self._steps_1_to_6(cfg)
             if flow in ("v2", "voice"):
                 self._voice(cfg)
-            status, reason = "succeeded", {"v1": "placed", "grasp": "grasped"}.get(flow, "handed over")
+            status, reason = "succeeded", {"v1": "placed", "grasp": "grasped", "handoff": "released"}.get(flow, "handed over")
         except MissionAborted:
             status, reason = "aborted", "emergency stop"
         except Exception as exc:

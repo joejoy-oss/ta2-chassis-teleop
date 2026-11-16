@@ -84,11 +84,12 @@ class FlowV2(_VoiceServer, unittest.TestCase):
         self.assertEqual(m["flow"], "v2")
         self.assertEqual(m["result"], "handed over")
         self.assertEqual(list(m["durations"]), ["preflight", "g2r", "grasp", "stow", "r2g", "place", "voice"])
-        self.assertEqual([s["id"] for s in m["voice"]["steps"]], ["7.1", "7.2", "7.3", "7.4", "7.5", "7.6", "7.7"])
+        self.assertEqual([s["id"] for s in m["voice"]["steps"]], ["7.1", "7.2", "7.3", "7.4", "7.5", "7.6", "7.7", "7.8"])
         self.assertEqual({s["status"] for s in m["voice"]["steps"]}, {"succeeded"})
         self.assertEqual(m["voice"]["hand"], "right")
         self.assertEqual(self.commands("arm"), [["start_hold"], ["open_right"], ["start_hold"], ["open_right"]])
         self.assertEqual(self.commands("down"), [["right", "10"], ["right", "10"]])
+        self.assertEqual(self.commands("move"), [["right", "10", "0", "0"]])   # step 7 only: reach out, then lower
         self.assertEqual(len(self.commands("vla")), 2)
         self.assertEqual(self.voice.posts(), ["/rehearse", "/confirm"])
         self.assertTrue(all(h == "127.0.0.1:8096" for _, _, h in self.voice.calls))
@@ -96,7 +97,7 @@ class FlowV2(_VoiceServer, unittest.TestCase):
     def test_page_lists_step_7(self):
         from urllib.request import urlopen
         page = urlopen(self.url + "/", timeout=5).read().decode()
-        for text in ("开始全流程 v2", "单独运行第 7 步", "语音交互模块", "7.1", "识别口令", "7.7", "完成播报"):
+        for text in ("开始全流程 v2", "单独运行第 7 步", "语音交互模块", "7.1", "识别口令", "7.8", "完成播报", "7.4", "前伸", "mk-done", "单独放下"):
             self.assertIn(text, page)
         caps = self.request("GET", "/api/v1/capabilities")[1]
         self.assertIn("flow", caps["actions"]["mission.run"])
@@ -112,8 +113,12 @@ class VoiceOnly(_VoiceServer, unittest.TestCase):
         self.assertEqual(list(m["durations"]), ["preflight", "voice"])
         self.assertEqual(self.commands("arm"), [["start_hold"], ["open_right"]])
         self.assertEqual(self.commands("down"), [["right", "10"]])
-        self.assertEqual(m["voice"]["steps"][5]["status"], "succeeded")
-        self.assertIn("未夹持", m["voice"]["steps"][5]["detail"])
+        self.assertEqual(self.commands("move"), [["right", "10", "0", "0"]])
+        order = [r["kind"] for r in map(json.loads, (self.dir / "commands.jsonl").read_text().splitlines())
+                 if r["kind"] in ("move", "down")]
+        self.assertEqual(order, ["move", "down"])                        # reach out first, then lower
+        self.assertEqual(m["voice"]["steps"][6]["status"], "succeeded")
+        self.assertIn("未夹持", m["voice"]["steps"][6]["detail"])
 
     def test_bad_flow_rejected(self):
         code, body = self.request("POST", "/api/v1/actions", {"type": "mission.run", "params": {"flow": "v9"}})
@@ -150,3 +155,30 @@ class VoiceEstop(_VoiceServer, unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HandoffAlone(_VoiceServer, unittest.TestCase):
+    scenario = "holding_right"
+
+    def test_reach_lower_release_with_holding_hand(self):
+        code, body = self.request("POST", "/mission/run/handoff")
+        self.assertEqual(code, 202, body)
+        m = self.end(body["action_id"], "succeeded")
+        self.assertEqual((m["flow"], m["result"], m["hand"]), ("handoff", "released", "right"))
+        self.assertEqual(list(m["durations"]), ["preflight", "handoff"])
+        order = [(r["kind"], r["argv"]) for r in map(json.loads, (self.dir / "commands.jsonl").read_text().splitlines())
+                 if r["kind"] in ("move", "down", "arm", "vla")]
+        self.assertEqual(order, [("move", ["right", "10", "0", "0"]), ("down", ["right", "10"]), ("arm", ["open_right"])])
+        self.assertEqual([s["status"] for s in m["voice"]["steps"]],
+                         ["skipped"] * 3 + ["succeeded"] * 4 + ["skipped"])
+        self.assertEqual(self.voice.posts(), [])          # no listening, no announcement
+
+
+class HandoffNeedsHeldObject(_VoiceServer, unittest.TestCase):
+    scenario = "success_right"            # nothing held at preflight
+
+    def test_refused_without_object(self):
+        code, body = self.request("POST", "/api/v1/actions", {"type": "mission.run", "params": {"flow": "handoff"}})
+        self.assertEqual(code, 409, body)
+        self.assertIn("exactly one gripper", json.dumps(body))
+        self.assertEqual(self.commands("move"), [])

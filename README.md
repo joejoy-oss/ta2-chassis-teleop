@@ -47,8 +47,10 @@ Single column, Chinese labels, works on a phone. From top to bottom:
 
 - **Top bar** (always visible): connection, API mode, current activity, and the only red button,
   **急停 (E-STOP)**; the **Esc** key does the same. See Safety below.
-- **VLA 抓取**: the big button 开始抓取（60 秒） runs the currently selected model in `vla_models.json`
-  for 60 s at max 1.0 rad/s (Start pose with grippers open first). **选择 / 切换模型** opens `/models`,
+- **VLA 抓取**: the big button 开始抓取（同全流程第 3 步） runs exactly full-flow step 3 (`mission.run`
+  `{"flow":"grasp","attempts":5|3|1}`) with the currently selected model in `vla_models.json`: each attempt resets
+  (Start pose, grippers open) and runs up to 45 s at max 1.0 rad/s; a grasp stops it holding in place, an empty close
+  (1 s), a hold without lift (10 s) or the time limit moves on to the next attempt; all failed → Start pose. **选择 / 切换模型** opens `/models`,
   listing only RTC models: v3 step 20000 (checkpoint 19999, port 8005, default `grasp_v3_step20000_rtc`),
   step 13000 (8004), step 10000 (8003), and v2 step 4999 (8000), with their container states. Selection is saved
   in `/root/ta2_vla_selected.json` without starting motion and is also used as the default model for

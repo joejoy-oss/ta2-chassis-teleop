@@ -55,7 +55,7 @@ def main():
             frame = {"t": now, "fsm": 2, "arms_fresh": fresh}
             for side in ("left", "right"):
                 frame[side] = {"grip_pos": 1.05, "grip_eff": 0.2, "ee_z": -0.30, "fresh": fresh}
-            side = "right" if SCENARIO in ("success_right", "api_success_right") else "left"
+            side = "right" if SCENARIO in ("success_right", "api_success_right", "holding_right") else "left"
             success_at = 3 if SCENARIO == "success_left" else 1
             loaded = (st["attempt"] >= success_at and SCENARIO not in ("all_fail", "api_no_grasp") and
                       st["stage"] not in ("idle", "start", "open_left", "open_right"))
@@ -71,6 +71,8 @@ def main():
                     frame["left"].update(grip_pos=-0.06, grip_eff=-1.71)
                 else:
                     frame["left"].update(grip_pos=1.05, grip_eff=0.2, ee_z=-0.30)
+            if SCENARIO == "holding_right" and st["stage"] != "open_right":
+                frame["right"].update(grip_pos=0.39, grip_eff=-2.5)          # holding the bag until released
             if SCENARIO == "occupied":
                 frame["right"].update(grip_pos=0.4, grip_eff=-2.0)
             if (ROOT / "drop").exists():

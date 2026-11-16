@@ -149,8 +149,8 @@ POST 控制端点不需要请求体；启动动作使用 `Content-Type: applicat
 
 `mission.run` 的 `flow`（可选）：`v1`（默认，第 1–6 步）、`v2`（全流程 v2：1–6 步后接第 7 步语音交互模块）、
 `voice`（只运行第 7 步，用于调试）。第 7 步的子步骤在 `state.mission.voice.steps` 里实时给出：
-7.1 识别口令 → 7.2 真机抓取（抓住即停，同第 3 步）→ 7.3 收臂（start_hold）→ 7.4 下降 10 cm（arm_down）
-→ 7.5 松开该手 → 7.6 确认交接（夹爪张开且未夹持）→ 7.7 完成播报（Mac /confirm）。每步含 `id/name/uses/status/detail`。
+7.1 识别口令 → 7.2 真机抓取（抓住即停，同第 3 步）→ 7.3 收臂（start_hold）→ 7.4 前伸 10 cm（arm_move，`HANDOFF_FORWARD_CM`，0 跳过）
+→ 7.5 下降 10 cm（arm_down）→ 7.6 松开该手 → 7.7 确认交接（夹爪张开且未夹持）→ 7.8 完成播报（Mac /confirm）。每步含 `id/name/uses/status/detail`。
 网页入口：`POST /mission/run/v2`、`POST /mission/run/voice`。
 序列保留现有路径间 `PATH_PAUSE`（默认 10 秒）。
 
@@ -185,7 +185,9 @@ model 必须是 `/api/v1/models` 的 RTC id；同步版 id 已删除，使用时
 默认注册模型为 `grasp_v3_step13000_rtc`；省略时绑定请求开始时的网页选择。
 保存的已删除 id 在服务启动时回退到该默认值。
 指定 model 不保存选择，也不改变网页。seconds 为 1–120 的有限数字，默认该模型的 seconds；
-stop_on_grasp 必须是布尔值，默认 false。网页「开始抓取」仍走旧逻辑，不启用检测。
+stop_on_grasp 必须是布尔值，默认 false。网页大按钮「开始抓取」不走 `vla.grasp`，而是 `mission.run {"flow":"grasp"}`，与全流程第 3 步完全相同。
+
+`mission.run {"flow":"handoff"}`（网页「单独放下」）：只跑 7.4–7.7（前伸 → 下降 → 松开 → 确认），用预检时正好夹着东西的那只手；两只手都没夹或都夹着则 409 `MISSION_PREFLIGHT_FAILED`。不跑 VLA、不收臂、不播报，结果 `released`。
 
 启用检测前必须拿到新鲜监控数据，否则 HTTP 503 MONITOR_DOWN，VLA 不启动。
 每次调用独立初始化左右检测器，每帧使用 `mission.grasp_update`，沿用闭爪高度、负载、抬升和持续时间判据。
