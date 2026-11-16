@@ -109,13 +109,15 @@ def read_mic(gen, mic, end, p, stream):
         x = np.frombuffer(chunk, dtype="<i2").astype(np.float32) / 32768
         rms = float(np.sqrt(np.mean(x * x))) if x.size else 0.0
         db = round(20 * math.log10(max(rms, 1e-6)), 1)
-        with lock:
-            state["mics"][label(mic)] = db
-            state["level"] = max(v for v in state["mics"].values() if isinstance(v, float))
+        if rms > 0:
+            with lock:
+                state["mics"][label(mic)] = db
+                state["level"] = max(v for v in state["mics"].values() if isinstance(v, float))
         if rms > 0:
             silent_since = time.monotonic()
-        elif time.monotonic() - silent_since > 3:       # exact zeros = no permission or no device behind it
-            return "没有声音（终端没有麦克风权限，或设备没连上）"
+        elif time.monotonic() - silent_since > 3:       # exact zeros: no permission, or the iPhone is not connected
+            with lock:                                  # yet; keep listening, it may connect during this round
+                state["mics"][label(mic)] = "无声音（手机未连上或终端无麦克风权限）"
         with kws_lock:
             stream.accept_waveform(RATE, x)
             heard = None
