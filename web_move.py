@@ -56,6 +56,7 @@ import threading
 import time
 import uuid
 from urllib.parse import parse_qs, unquote, urlsplit
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("PORT", "8088"))
@@ -1134,6 +1135,195 @@ class _Host:
 
 mission = mission_module.Mission(sys.modules.get(__name__) or _Host())
 
+# ---- robot status check (/robot-check): read-only, one click ---------------------------------------------
+# Runs inside the client container (stdin script): listens ~2 s to the robot topics and reports rates + values.
+ROBOT_TOPICS_SCRIPT = r'''
+import json, time
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from rosidl_runtime_py.utilities import get_message
+from rosidl_runtime_py.convert import message_to_ordereddict
+TOPICS = %s
+rclpy.init(); node = Node("ta2_robot_check"); types = {}
+end = time.monotonic() + 1.5
+while time.monotonic() < end and len(types) < len(TOPICS):
+    for name, ts in node.get_topic_names_and_types():
+        if name in TOPICS and ts:
+            types[name] = ts[0]
+    rclpy.spin_once(node, timeout_sec=0.1)
+counts, last, errors = {t: 0 for t in TOPICS}, {}, {}
+def got(t, m):
+    counts[t] += 1; last[t] = m
+for t, ty in types.items():
+    try:
+        node.create_subscription(get_message(ty), t, lambda m, t=t: got(t, m), qos_profile_sensor_data)
+    except Exception as exc:
+        errors[t] = str(exc)[:120]
+WINDOW = 2.0; t0 = time.monotonic()
+while time.monotonic() - t0 < WINDOW:
+    rclpy.spin_once(node, timeout_sec=0.05)
+def summary(m):
+    d = message_to_ordereddict(m)
+    if "position" in d and isinstance(d["position"], list):
+        return {"position": [round(v, 3) for v in d["position"][:7]], "effort": [round(v, 2) for v in (d.get("effort") or [])[:1]]}
+    if "position" in d and isinstance(d["position"], dict):
+        return {"z": round(d["position"]["z"], 3)}
+    if "pose" in d:
+        p = d["pose"]["pose"]["position"]; return {"x": round(p["x"], 3), "y": round(p["y"], 3)}
+    return json.loads(json.dumps(d, default=str))
+out = {t: {"declared": t in types, "hz": round(counts[t] / WINDOW, 1),
+           "value": summary(last[t]) if t in last else None, "error": errors.get(t)} for t in TOPICS}
+print(json.dumps(out))
+'''
+ROBOT_TOPICS = [("/left_arm/joint_states", "左臂关节"), ("/right_arm/joint_states", "右臂关节"),
+                ("/left_gripper/joint_states", "左夹爪"), ("/right_gripper/joint_states", "右夹爪"),
+                ("/left_arm/current_ee_pose", "左臂末端位姿"), ("/right_arm/current_ee_pose", "右臂末端位姿"),
+                ("/api/current_mode", "控制模式"), ("/fsm_state", "状态机"), ("/chassis/odom", "底盘里程计")]
+
+
+def _check_cmd(cmd, timeout, stdin=None):
+    try:
+        r = subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=timeout)
+        return r.returncode, r.stdout.strip(), r.stderr.strip()
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, "", str(exc)
+
+
+def _container_up(name):
+    rc, out, _ = _check_cmd(["docker", "inspect", "-f", "{{.State.Running}}", name], 3)
+    return rc == 0 and out == "true"
+
+
+def robot_check():
+    """Read-only snapshot of everything the robot needs; no command is sent to the robot."""
+    items = []
+
+    def add(group, name, level, value, hint=""):          # level: ok / warn / bad
+        items.append({"group": group, "name": name, "level": level, "value": value, "hint": hint})
+
+    ping = shlex.split(os.environ.get("ROBOT_PING_CMD", f"ping -c 1 -W 1 {ROBOT}"))
+    rc, out, _ = _check_cmd(ping, 4)
+    rtt = next((p.split("=")[-1].split()[0] for p in out.split() if p.startswith("time=")), None)
+    add("网络", f"B70 → 机器人 {ROBOT}", "ok" if rc == 0 else "bad", f"通（{rtt} ms）" if rc == 0 else "不通",
+        "" if rc == 0 else "检查机器人电源和网线 / Wi-Fi")
+    add("网络", "遥控连接（8088 记录）", "ok" if state["connected"] else "bad", "已连接" if state["connected"] else "未连接",
+        "这是 8088 的缓存状态；以下面的实时数据为准")
+    add("网络", "API 模式（8088 记录）", "ok" if state["mode_ok"] is True else "bad",
+        {True: "是", False: "否"}.get(state["mode_ok"], "未知"), "" if state["mode_ok"] is True else "在机器人上切到 API 模式")
+
+    cmd = shlex.split(os.environ.get("ROBOT_CHECK_CMD", f"docker exec -i {CONTAINER} "
+                                     "/usr/local/bin/openpi-client-entrypoint.sh python3 -u -"))
+    script = ROBOT_TOPICS_SCRIPT % json.dumps([t for t, _ in ROBOT_TOPICS])
+    rc, out, err = _check_cmd(cmd, 15, script)
+    try:
+        topics = json.loads(out.splitlines()[-1]) if rc == 0 and out else None
+    except ValueError:
+        topics = None
+    if topics is None:
+        add("机器人数据（实时 2 秒）", "读取话题", "bad", "检测脚本失败", (err or out)[-200:])
+    else:
+        for t, label in ROBOT_TOPICS:
+            d = topics.get(t) or {}
+            hz, val = d.get("hz", 0), d.get("value")
+            if hz > 0:
+                level, text = "ok", f"{hz:g} Hz"
+            elif d.get("declared"):
+                level, text = "bad", "通道在，但 2 秒内没有数据"
+            else:
+                level, text = "bad", "没有这个话题"
+            if t == "/fsm_state" and hz == 0 and val is None:
+                level = "warn"                      # published only on change on some firmware
+            if val is not None:
+                text += " · " + json.dumps(val, ensure_ascii=False)[:160]
+            hint = "" if level == "ok" else ("机器人本体没发这个数据：查急停 / 报错，必要时重启本体控制程序"
+                                             if t != "/fsm_state" else "状态机话题可能只在变化时发布")
+            add("机器人数据（实时 2 秒）", f"{label}  {t}", level, text, d.get("error") or hint)
+        mode = (topics.get("/api/current_mode") or {}).get("value")
+        if isinstance(mode, dict):
+            for side, cn in (("left", "左臂"), ("right", "右臂")):
+                en, cm = mode.get(f"enable_{side}_arm"), mode.get(f"{side}_arm_control_mode")
+                add("机器人配置", f"{cn}使能 / 控制模式", "ok" if en is True and cm == 1 else "warn",
+                    f"使能 {en} · 控制模式 {cm}", "" if en is True and cm == 1 else "手臂需要使能且为关节模式（1）")
+
+    with seq_lock:
+        add("8088 服务", "急停", "bad" if state["estop"] else "ok", "已触发" if state["estop"] else "未触发",
+            "在页面上解除急停" if state["estop"] else "")
+        b = busy()
+        act = current_action[0]
+        add("8088 服务", "当前任务", "warn" if b else "ok",
+            (act["type"] if act else "运行中") if b else "空闲", "")
+    model = VLA_MODELS.get(state["vla_selected"]) or {}
+    container = POLICY_CONTAINER or model.get("container", "")
+    up = _container_up(container) if container else False
+    add("模型与工具", "当前选中模型", "ok" if up else "bad", f"{model.get('name', state['vla_selected'])} · 容器 {container} "
+        + ("运行中" if up else "未运行"), "" if up else "在「选择 / 切换模型」页启动它的容器")
+    for name, label, hint in ((CONTAINER, "ROS 客户端容器", "手臂、VLA、夹爪读取都依赖它"),
+                              ("ta2-sim-pipeline", "逆运动学容器", "前伸 / 下降需要它")):
+        ok = _container_up(name)
+        add("模型与工具", label, "ok" if ok else "bad", f"{name} " + ("运行中" if ok else "未运行"), "" if ok else hint)
+    try:
+        req = urllib.request.Request(mission_module.VOICE_BRIDGE + "/status", headers={"Host": mission_module.VOICE_BRIDGE_HOST})
+        with urllib.request.urlopen(req, timeout=3) as r:
+            v = json.load(r)
+        mics = v.get("mics") or {}
+        bad_mics = [k for k, x in mics.items() if not isinstance(x, (int, float))]
+        add("语音（Mac）", "语音服务", "ok", {"idle": "空闲", "listening": "正在听", "recognized": "已识别", "playing": "正在播报",
+                                         "done": "播报完成", "failed": "上次：" + str(v.get("detail", ""))}.get(v.get("state"), v.get("state")))
+        if mics:
+            add("语音（Mac）", "麦克风", "warn" if bad_mics else "ok",
+                " · ".join(f"{k} {x:g} dB" if isinstance(x, (int, float)) else f"{k} 不可用" for k, x in mics.items()),
+                "iPhone：同一 Apple ID、开 Wi-Fi 和蓝牙、靠近 Mac" if bad_mics else "")
+    except (OSError, ValueError) as exc:
+        add("语音（Mac）", "语音服务", "bad", "连不上", f"在 MacBook 终端运行 ~/ta2-voice/start_mac_voice.sh（{exc}）")
+    counts = {k: sum(i["level"] == k for i in items) for k in ("ok", "warn", "bad")}
+    return {"checked_at": timestamp(), "summary": counts, "items": items}
+
+
+ROBOT_CHECK_PAGE = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>机器人状态检测</title><style>
+:root{--bg:#f6f7f9;--fg:#1f2933;--muted:#616e7c;--panel:#fff;--line:#d9dee5;--ok:#2f855a;--ok-f:#ebf8f0;--warn:#b7791f;--warn-f:#fffaeb;--bad:#c53030;--bad-f:#fdeeee;--accent:#2b6cb0}
+@media (prefers-color-scheme:dark){:root{--bg:#121417;--fg:#e4e7eb;--muted:#9aa5b1;--panel:#1b1f24;--line:#323a43;--ok:#68d391;--ok-f:#16261d;--warn:#d69e2e;--warn-f:#2a2416;--bad:#fc8181;--bad-f:#2b1818;--accent:#63b3ed}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif}
+main{max-width:900px;margin:0 auto;padding:16px}a{color:var(--accent)}h1{font-size:20px;margin:6px 0 2px}.sub{color:var(--muted);margin:0 0 12px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+button{font:inherit;font-weight:600;padding:10px 22px;border-radius:8px;border:0;background:var(--accent);color:#fff;cursor:pointer}button:disabled{opacity:.5}
+#verdict{padding:8px 14px;border-radius:8px;font-weight:700;border:1px solid var(--line);background:var(--panel)}
+#verdict.ok{color:var(--ok);background:var(--ok-f);border-color:var(--ok)}#verdict.warn{color:var(--warn);background:var(--warn-f);border-color:var(--warn)}#verdict.bad{color:var(--bad);background:var(--bad-f);border-color:var(--bad)}
+.group{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden}
+.group h2{font-size:14px;margin:0;padding:8px 14px;border-bottom:1px solid var(--line)}
+.row{display:grid;grid-template-columns:22px minmax(140px,1.1fr) 2fr;gap:8px;padding:7px 14px;border-top:1px solid var(--line);align-items:start}
+.row:first-of-type{border-top:0}.ic{font-weight:700}.ok .ic{color:var(--ok)}.warn .ic{color:var(--warn)}.bad .ic{color:var(--bad)}
+.bad{background:var(--bad-f)}.warn{background:var(--warn-f)}
+.val{word-break:break-all}.hint{display:block;color:var(--muted);font-size:12px}
+@media(max-width:560px){.row{grid-template-columns:22px 1fr}.val{grid-column:2}}
+</style></head><body><main>
+<a href="/">← 返回 TA2 遥控</a>
+<h1>机器人状态检测</h1>
+<p class="sub">只读检测，不向机器人发送任何指令。实时数据项会监听机器人话题约 2 秒，整次检测约 5 秒。</p>
+<div class="bar"><button id="run">一键检测</button><span id="verdict">尚未检测</span><span id="at" class="sub" style="margin:0"></span></div>
+<div id="out"></div>
+</main><script>
+const IC={ok:'✓',warn:'!',bad:'✗'};
+function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+async function run(){
+  const b=document.getElementById('run'),v=document.getElementById('verdict');b.disabled=true;v.className='';v.textContent='检测中…';
+  try{
+    const r=await fetch('/api/v1/robot-check',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error((d.error&&d.error.message)||r.status);
+    const s=d.summary;v.className=s.bad?'bad':s.warn?'warn':'ok';
+    v.textContent=s.bad?'有 '+s.bad+' 项异常'+(s.warn?'，'+s.warn+' 项警告':''):s.warn?'正常，'+s.warn+' 项警告':'全部正常（'+s.ok+' 项）';
+    document.getElementById('at').textContent='检测时间 '+d.checked_at;
+    const groups={};d.items.forEach(i=>(groups[i.group]=groups[i.group]||[]).push(i));
+    document.getElementById('out').innerHTML=Object.entries(groups).map(([g,list])=>'<div class="group"><h2>'+esc(g)+'</h2>'+
+      list.map(i=>'<div class="row '+i.level+'"><span class="ic">'+IC[i.level]+'</span><span>'+esc(i.name)+'</span><span class="val">'+esc(i.value)+
+        (i.hint?'<span class="hint">'+esc(i.hint)+'</span>':'')+'</span></div>').join('')+'</div>').join('');
+  }catch(e){v.className='bad';v.textContent='检测失败：'+e.message}
+  finally{b.disabled=false}
+}
+document.getElementById('run').onclick=run;run();
+</script></body></html>"""
+
+
 def _gf_text(cx, cy, lines, size=14, lh=19):
     y0 = cy - (len(lines) - 1) * lh / 2 + size * 0.35
     spans = "".join('<tspan x="{}" y="{:.1f}"{}>{}</tspan>'.format(
@@ -1391,7 +1581,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
 @media (prefers-reduced-motion:reduce){.listen .mic::before,.listen .mic::after,.listen .bars i{animation:none}}
 </style></head><body>
 <header><div class="bar">
-  <div class="identity"><h1>TA2 遥控</h1><a href="/api-docs" target="_blank" rel="noopener">接口文档 / 测试</a><a href="/grasp-flow" target="_blank" rel="noopener">抓取流程图</a><span id="connection" class="connection" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-text">连接中…</span></span><span id="mode" class="badge">模式未知</span></div>
+  <div class="identity"><h1>TA2 遥控</h1><a href="/api-docs" target="_blank" rel="noopener">接口文档 / 测试</a><a href="/grasp-flow" target="_blank" rel="noopener">抓取流程图</a><a href="/robot-check" target="_blank" rel="noopener">机器人状态检测</a><span id="connection" class="connection" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-text">连接中…</span></span><span id="mode" class="badge">模式未知</span></div>
   <button id="estop" class="estop" title="急停底盘、手臂与抓取任务（Esc）">急停</button>
   <div class="activity"><span>当前活动</span><span id="status" role="status">正在连接机器人…</span></div>
 </div></header>
@@ -1855,6 +2045,8 @@ class Handler(BaseHTTPRequestHandler):
         # Monitor startup/service inspection must not block STOP or action polling.
         if path == "/api/v1/grippers":
             return self._send(200, gripper_monitor.readings())
+        if path == "/api/v1/robot-check":
+            return self._send(200, robot_check())
         if path == "/api/v1/grippers/classify":
             q = parse_qs(query)
             try:
@@ -1942,6 +2134,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.api_error(APIError(500, "INTERNAL_ERROR", str(e)))
         if path == "/":
             self._send(200, PAGE, "text/html")
+        elif path == "/robot-check":
+            self._send(200, ROBOT_CHECK_PAGE, "text/html")
         elif path == "/grasp-flow":
             self._send(200, grasp_flow_page(), "text/html")
         elif path == "/api-docs":

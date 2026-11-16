@@ -18,6 +18,15 @@ sys.path.insert(0, str(ROOT))
 from ta2_client import TA2Client
 
 
+ROBOT_TOPICS_FAKE = """import json, sys
+sys.stdin.read()
+print(json.dumps({"/left_arm/joint_states": {"declared": True, "hz": 50.0, "value": {"position": [0.1] * 7}},
+                  "/right_arm/joint_states": {"declared": True, "hz": 0.0, "value": None},
+                  "/api/current_mode": {"declared": True, "hz": 10.0, "value": {"enable_left_arm": True, "left_arm_control_mode": 1,
+                                                                                "enable_right_arm": True, "right_arm_control_mode": 1}}}))
+"""
+
+
 class _MissionServer:
     scenario = "success_left"
 
@@ -42,6 +51,7 @@ class _MissionServer:
                "PATH_DIR": str(paths), "TRAIL_DIR": str(self.dir / "trails"),
                "MISSION_LOG_DIR": str(self.dir / "missions"), "ACTION_LOG": str(self.dir / "actions.jsonl"), "GRIP_LOG": str(self.dir / "grip.jsonl"),
                "PATH_PAUSE": "0.05", "ARRIVE_PAUSE": "0.05", "ATTEMPT_S": "4", "SC": '{"noise":0}',
+               "ROBOT_PING_CMD": "echo 64 bytes time=0.6 ms", "ROBOT_CHECK_CMD": shlex.join([sys.executable, "-c", ROBOT_TOPICS_FAKE]),
                **getattr(self, "extra_env", {})}
         self.server_log = (self.dir / "server.log").open("w")
         self.server = subprocess.Popen([sys.executable, "-u", str(ROOT / "web_move.py")], cwd=ROOT,
@@ -111,6 +121,26 @@ class _MissionServer:
     def commands(self, kind):
         p = self.dir / "commands.jsonl"
         return [r["argv"] for r in map(json.loads, p.read_text().splitlines()) if r["kind"] == kind] if p.exists() else []
+
+
+class RobotCheck(_MissionServer, unittest.TestCase):
+    scenario = "success_right"
+
+    def test_one_click_check_is_read_only(self):
+        code, d = self.request("GET", "/api/v1/robot-check")
+        self.assertEqual(code, 200, d)
+        rows = {i["name"]: i for i in d["items"]}
+        self.assertEqual(rows["左臂关节  /left_arm/joint_states"]["level"], "ok")
+        self.assertIn("50 Hz", rows["左臂关节  /left_arm/joint_states"]["value"])
+        self.assertEqual(rows["右臂关节  /right_arm/joint_states"]["level"], "bad")       # declared, no data
+        self.assertIn("没有数据", rows["右臂关节  /right_arm/joint_states"]["value"])
+        self.assertEqual(rows["左臂使能 / 控制模式"]["level"], "ok")
+        self.assertEqual(rows[f"B70 → 机器人 192.168.31.218"]["level"], "ok")
+        self.assertEqual(set(d["summary"]), {"ok", "warn", "bad"})
+        self.assertEqual(self.commands("arm") + self.commands("vla") + self.commands("down") + self.commands("move"), [])
+        from urllib.request import urlopen
+        self.assertIn("一键检测", urlopen(self.url + "/robot-check", timeout=5).read().decode())
+        self.assertIn('href="/robot-check"', urlopen(self.url + "/", timeout=5).read().decode())
 
 
 class LeftSuccess(_MissionServer, unittest.TestCase):
