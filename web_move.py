@@ -70,7 +70,7 @@ if os.environ.get("TELEOP_CMD"):              # for offline testing
 DIRS = ("forward", "back", "left", "right", "ccw", "cw")
 TRAIL_DIR = os.environ.get("TRAIL_DIR", "/root/ta2_trails")
 PATH_DIR = os.environ.get("PATH_DIR", "/root/ta2_paths")
-PATH_PAUSE = float(os.environ.get("PATH_PAUSE", "10"))   # Run all: seconds to stand still after each path
+PATH_PAUSE = float(os.environ.get("PATH_PAUSE", "12"))   # Run all: seconds to stand still after each path
 ROUTES = {"g2r": ("绿 → 红", ["001", "002"]), "r2g": ("红 → 绿", ["003", "004"])}
 ARM_CMD = shlex.split(os.environ.get("ARM_CMD", f"docker exec {CONTAINER} /usr/local/bin/openpi-client-entrypoint.sh "
                                     "python3 -u /outputs/arm/arm_pose.py"))
@@ -1616,7 +1616,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
     <p class="status-line">上次：<span id="vlast">尚未运行</span></p>
     <div id="vlalive" class="glive" role="status" hidden></div>
     <div class="arm-section">
-      <div class="arm-controls"><h3>手臂</h3><button id="armstart" class="small" title="回到训练起始姿态，夹爪张开，约 10 秒" disabled>起始姿态</button><button id="armstarthold" class="small" title="回到训练起始姿态，正在夹着的夹爪保持夹紧（不松开），约 10 秒" disabled>起始姿态·保持夹爪</button><button id="armdown5" class="small" title="右臂末端竖直下降 5 cm，朝向不变，夹着的夹爪保持夹紧；每次按当前位置重新计算，最多降到末端 z = −0.40 m（不足 5 cm 时只降到下限），约 8 秒" disabled>右臂下降 5 cm</button><button id="armfwdleft" class="small" title="左臂末端沿直线向前 5 cm，朝向和夹爪不变；每次按当前位置重新计算，够不到或路径不安全时拒绝，约 8 秒" disabled>左臂前送 5 cm</button><button id="armfwdright" class="small" title="右臂末端沿直线向前 5 cm，朝向和夹爪不变；每次按当前位置重新计算，够不到或路径不安全时拒绝，约 8 秒" disabled>右臂前送 5 cm</button><button id="armopenright" class="small" title="张开右夹爪（全力张开），手臂保持当前姿态不动；夹着的东西会掉下来，约 3 秒" disabled>松开右爪</button><button id="armcloseright" class="small" title="闭合右夹爪（全力夹紧），手臂保持当前姿态不动，约 3 秒；之后保持夹紧" disabled>闭合右爪</button><button id="armraise" class="small" title="抬起手臂，约 8 秒" disabled>抬起</button><button id="armlower" class="small" title="返回抬起前的姿态，约 15 秒" disabled>放下</button></div>
+      <div class="arm-controls"><h3>手臂</h3><button id="armstart" class="small" title="回到训练起始姿态，夹爪张开，约 10 秒" disabled>起始姿态</button><button id="armstarthold" class="small" title="回到训练起始姿态，正在夹着的夹爪保持夹紧（不松开），约 10 秒" disabled>起始姿态·保持夹爪</button><button id="armdown5" class="small" title="右臂末端竖直下降 5 cm，朝向不变，夹着的夹爪保持夹紧；每次按当前位置重新计算，最多降到末端 z = −0.40 m（不足 5 cm 时只降到下限），约 8 秒" disabled>右臂下降 5 cm</button><button id="armfwdleft" class="small" title="左臂末端沿直线向前 5 cm，朝向和夹爪不变；每次按当前位置重新计算，够不到或路径不安全时拒绝，约 8 秒" disabled>左臂前送 5 cm</button><button id="armfwdright" class="small" title="右臂末端沿直线向前 5 cm，朝向和夹爪不变；每次按当前位置重新计算，够不到或路径不安全时拒绝，约 8 秒" disabled>右臂前送 5 cm</button><button id="armopenright" class="small" title="张开右夹爪（全力张开），手臂保持当前姿态不动；夹着的东西会掉下来，约 3 秒" disabled>松开右爪</button><button id="armcloseright" class="small" title="闭合右夹爪（全力夹紧），手臂保持当前姿态不动，约 3 秒；之后保持夹紧" disabled>闭合右爪</button><button id="armraise" class="small" title="抬起手臂，约 8 秒" disabled>抬起</button><button id="armlower" class="small" title="撤销「抬起」：回到这次抬起之前的姿态，约 15 秒。只有手臂正处在抬起姿态时才执行，否则拒绝（请用「起始姿态」）" disabled>放下（撤销抬起）</button></div>
       <p id="armst" class="status-line">尚未移动</p>
     </div>
   </div></section>
@@ -1644,8 +1644,8 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
   </div></details>
   <details id="route-details" class="card"><summary>路线</summary><div class="body">
     <div class="route-buttons">
-      <button data-route="g2r" disabled><span class="route-title"><span class="route-dot green" aria-hidden="true"></span>绿 → 红<span class="route-dot red" aria-hidden="true"></span></span><small>001 → 停 10 秒 → 002</small></button>
-      <button data-route="r2g" disabled><span class="route-title"><span class="route-dot red" aria-hidden="true"></span>红 → 绿<span class="route-dot green" aria-hidden="true"></span></span><small>003 → 停 10 秒 → 004</small></button>
+      <button data-route="g2r" disabled><span class="route-title"><span class="route-dot green" aria-hidden="true"></span>绿 → 红<span class="route-dot red" aria-hidden="true"></span></span><small>001 → 停 12 秒 → 002</small></button>
+      <button data-route="r2g" disabled><span class="route-title"><span class="route-dot red" aria-hidden="true"></span>红 → 绿<span class="route-dot green" aria-hidden="true"></span></span><small>003 → 停 12 秒 → 004</small></button>
     </div>
     <p id="routest" class="status-line" role="status">上次：尚未运行</p>
     <p class="hint">路径从当前位置出发：先把机器人停在起点、朝向与录制时一致</p>
@@ -1654,7 +1654,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
   <details id="paths-details" class="card"><summary>路径与轨迹</summary><div class="body">
     <div class="subhead"><h3>路径</h3><div class="tools"><button class="small" id="load" title="加载 CSV 路径文件">加载</button><button class="small" id="runall" title="按名称顺序运行全部路径，每条从上一条终点开始">全部运行</button></div></div>
     <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
-    <div class="plist" id="plist" title="点击路径行预览；路径从当前位置开始；全部运行时每条路径跑完停 10 秒"><div class="prow muted">尚未加载路径</div></div>
+    <div class="plist" id="plist" title="点击路径行预览；路径从当前位置开始；全部运行时每条路径跑完停 12 秒"><div class="prow muted">尚未加载路径</div></div>
     <div class="trajectory">
       <div class="subhead"><h3>轨迹</h3><span id="rec" title="正在录制轨迹">● 录制中</span></div>
       <div id="pose"></div>
@@ -1713,7 +1713,7 @@ function uiText(value){
     ['unknown route','未知路线'],['missing paths: ','未加载路径：'],['teleop disconnected','机器人连接已断开'],
     ['stopped before ','已中止，未开始路径 '],['stopped at ','已中止于路径 '],['finished','已完成'],
     ['trail is empty','轨迹为空'],['starting','正在启动'],['ready','就绪'],['stopped','已停止'],
-    ['released','已松开'],['release','松开'],['timeout','超时'],['busy','忙碌中'],['done','已完成'],['error','错误']];
+    ["lower only undoes 'raise': the arms are not in the raised pose",'「放下」只用于撤销「抬起」：手臂当前不在抬起姿态'],['use \'start\' instead','请改用「起始姿态」'],['released','已松开'],['release','松开'],['timeout','超时'],['busy','忙碌中'],['done','已完成'],['error','错误']];
   for(const [from,to] of phrases)t=t.split(from).join(to);
   t=t.replace(/\barms (start_hold|start|down5|fwd5_left|fwd5_right|open_right|close_right|open_left|close_left|raise|lower):/g,(_,a)=>'手臂'+armActions[a]+'：')
     .replace(/\b(step|hold) (forward|back|left|right|ccw|cw)\b/g,(_,k,d)=>(k==='step'?'点按':'持续')+directions[d])

@@ -19,7 +19,7 @@ ATTEMPT_S = float(os.environ.get("ATTEMPT_S", "60"))   # s of policy execution p
 PROMPT = os.environ.get("PROMPT", "抓取沙包")
 PORT = int(os.environ.get("MISSION_PORT", os.environ.get("POLICY_PORT", "8000")))
 RTC = os.environ.get("MISSION_RTC", "0") == "1"   # async Real-Time Chunking for the grasp attempts (vla_run.sh RTC=1)
-ARRIVE_PAUSE = float(os.environ.get("ARRIVE_PAUSE", "10"))
+ARRIVE_PAUSE = float(os.environ.get("ARRIVE_PAUSE", "3"))   # s standing still at the route end before grasp / place
 PLACE_CM = float(os.environ.get("PLACE_CM", "10"))
 PLACE_FORWARD_CM = float(os.environ.get("PLACE_FORWARD_CM", "10"))   # step 6: reach out before lowering; 0 skips
 # "Holding something" = gripper pushing closed (effort) but stopped clearly above its empty-closed position.

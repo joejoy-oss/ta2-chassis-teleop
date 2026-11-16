@@ -53,6 +53,7 @@ CMD_RATE = 100.0          # joint_cmd, Hz
 HB_RATE = 20.0            # fsm/enable heartbeat, Hz
 GOTO_MAX_DELTA = 0.65       # rad: goto refuses any single joint change larger than this (10 cm descent uses ~0.44 rad)
 GOTO_START_TOL = 0.05       # rad: if the file records the start it was computed from, the arm must still be there
+LOWER_FROM_RAISED_TOL = 0.25  # rad: "lower" only undoes a "raise": both arms must still be near the raised pose
 HOLD_OPEN_BELOW = 0.9       # gripper position (rad) below this = closed / holding; open is about 1.05
 MAX_SPEED = 0.35          # rad/s peak joint speed
 FRESH = 0.3               # s
@@ -213,6 +214,12 @@ def main():
             except (OSError, ValueError, KeyError, TypeError):
                 raise Abort(f"cannot read training start pose {TRAIN_START}")
         else:
+            # "lower" returns to the pose saved by the last "raise". That pose is only meaningful while the arms
+            # are still raised; from anywhere else it would be an unrelated (possibly hours old) pose.
+            off = max(abs(s - r) for arm in ARMS for s, r in zip(start[arm], clip(arm, RAISED[arm])))
+            if off > LOWER_FROM_RAISED_TOL:
+                raise Abort(f"lower only undoes 'raise': the arms are not in the raised pose (off by {off:.2f} rad); "
+                            "use 'start' instead")
             try:
                 with open(SAVE) as f:
                     saved = json.load(f)
