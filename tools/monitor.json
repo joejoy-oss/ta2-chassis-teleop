@@ -1,0 +1,35 @@
+{
+  "port": 8096,
+  "host": "0.0.0.0",
+  "timezone": "Asia/Shanghai",
+  "run_roots": [
+    "/root/openpi-xpu/client/outputs"
+  ],
+  "cache_dir": "/data/ta2/infer",
+  "log": "/data/ta2/infer/monitor.log",
+  "window_s": 120,
+  "command_hz": 10,
+  "max_series": 4000,
+  "max_commands": 12000,
+  "frame": {
+    "enabled": true,
+    "width": 320,
+    "quality": 6,
+    "cache_frames": 48
+  },
+  "budget": {
+    "frequency_fallback": 45,
+    "replan_steps_fallback": 8,
+    "latency_warn_ms": 250
+  },
+  "limits": {
+    "max_tracking_rad": 0.2,
+    "max_initial_gap_rad": 0.6,
+    "max_stale_s": 1.0,
+    "disk_low_gb": 20
+  },
+  "expected_prompts": [
+    "抓取红色沙包",
+    "抓取沙包"
+  ]
+}

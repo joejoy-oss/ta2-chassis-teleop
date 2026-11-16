@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>工作台总台 · TA2</title>
+<style>
+  /* ─────────────────────────────────────────────
+     工作台总台 —— TA2 / 怀客松
+     纯静态、零依赖；双击打开即可，也可放在 B70 上供手机访问
+     ───────────────────────────────────────────── */
+  :root{
+    --bg:#07090b;
+    --bg2:#0a0e11;
+    --panel:#0e151a;
+    --panel2:#121a20;
+    --line:rgba(148,163,184,.13);
+    --line2:rgba(148,163,184,.24);
+    --txt:#e8eef2;
+    --dim:#93a2ac;
+    --dim2:#64737d;
+    --amber:#ffb454;
+    --amber-soft:rgba(255,180,84,.16);
+    --green:#4ee08a;
+    --red:#ff6b6b;
+    --mono:"Cascadia Mono",Consolas,"SFMono-Regular",Menlo,monospace;
+    --cn:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Noto Sans SC",sans-serif;
+    --disp:"Bahnschrift SemiCondensed","Bahnschrift","DIN Alternate","Microsoft YaHei UI",var(--cn);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    min-height:100vh;
+    background:var(--bg);
+    color:var(--txt);
+    font:14px/1.6 var(--cn);
+    letter-spacing:.01em;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:rgba(255,180,84,.28);color:#fff}
+
+  /* 背景：蓝图网格 + 两处极淡光晕 */
+  .bg{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
+  .bg::before{
+    content:"";position:absolute;inset:-2px;
+    background-image:
+      linear-gradient(rgba(148,163,184,.052) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(148,163,184,.052) 1px,transparent 1px);
+    background-size:38px 38px;
+    -webkit-mask-image:radial-gradient(ellipse 90% 70% at 50% 0%,#000 25%,transparent 78%);
+            mask-image:radial-gradient(ellipse 90% 70% at 50% 0%,#000 25%,transparent 78%);
+  }
+  .bg::after{
+    content:"";position:absolute;inset:0;
+    background:
+      radial-gradient(720px 380px at 8% -8%,rgba(255,180,84,.10),transparent 62%),
+      radial-gradient(680px 420px at 102% 6%,rgba(78,224,138,.055),transparent 60%),
+      linear-gradient(180deg,#080b0e 0%,#07090b 55%,#06080a 100%);
+  }
+
+  /* ── 页头 ── */
+  .mast{
+    max-width:1480px;margin:0 auto;padding:34px 36px 22px;
+    display:flex;justify-content:space-between;align-items:flex-end;gap:28px;
+    position:relative;
+  }
+  .brand{padding-left:18px;position:relative}
+  .brand::before{
+    content:"";position:absolute;left:0;top:4px;bottom:6px;width:3px;
+    background:linear-gradient(180deg,var(--amber),rgba(255,180,84,.05));
+  }
+  .kicker{
+    font:600 10px/1 var(--mono);letter-spacing:.28em;color:var(--amber);
+    display:flex;align-items:center;gap:9px;text-transform:uppercase;
+  }
+  .kicker i{
+    width:5px;height:5px;border-radius:50%;background:var(--amber);
+    box-shadow:0 0 10px var(--amber);
+  }
+  .mast h1{
+    margin:16px 0 10px;
+    font-family:var(--disp);
+    font-size:clamp(34px,5.4vw,58px);
+    font-weight:700;line-height:.98;letter-spacing:.015em;
+  }
+  .mast h1 .slash{color:var(--amber);font-weight:400;margin:0 .06em 0 .02em}
+  .mast .sub{margin:0;color:var(--dim);font-size:13px;letter-spacing:.02em}
+  .mast .sub b{color:var(--txt);font-weight:600}
+
+  .clock{text-align:right;position:relative;flex:none}
+  .clock::before{
+    content:"TA2";position:absolute;right:-4px;top:-34px;
+    font:700 108px/1 var(--disp);letter-spacing:-.02em;
+    color:rgba(255,255,255,.028);pointer-events:none;
+  }
+  .clock .time{
+    font:600 clamp(28px,3.4vw,40px)/1 var(--mono);
+    font-variant-numeric:tabular-nums;letter-spacing:.02em;
+  }
+  .clock .time span{color:var(--amber)}
+  .clock .date{margin-top:8px;font:500 12px/1 var(--mono);letter-spacing:.14em;color:var(--dim)}
+  .clock .tz{margin-top:7px;font:500 9px/1 var(--mono);letter-spacing:.2em;color:var(--dim2)}
+
+  /* ── 控制条 ── */
+  .console{
+    max-width:1480px;margin:0 auto;padding:0 36px 8px;
+    display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap;
+  }
+  .hostfield{
+    display:flex;align-items:center;gap:8px;
+    padding:8px 10px 8px 14px;
+    border:1px solid var(--line);border-radius:6px;
+    background:linear-gradient(180deg,rgba(255,255,255,.028),transparent),var(--panel);
+  }
+  .hostfield label{
+    font:600 10px/1 var(--mono);letter-spacing:.18em;color:var(--dim);
+    text-transform:uppercase;
+  }
+  .hostfield .proto{font:500 12px/1 var(--mono);color:var(--dim2);margin-left:2px}
+  #host{
+    width:150px;background:transparent;border:0;outline:0;
+    color:var(--txt);font:600 14px/1 var(--mono);letter-spacing:.04em;
+    padding:4px 2px;
+  }
+  #host:focus{color:var(--amber)}
+  .btn{
+    appearance:none;cursor:pointer;
+    border:1px solid var(--line2);background:transparent;color:var(--dim);
+    font:600 11px/1 var(--cn);letter-spacing:.06em;
+    padding:8px 12px;border-radius:5px;transition:.16s ease;
+  }
+  .btn:hover{color:var(--txt);border-color:var(--dim)}
+  .btn.solid{color:#141008;background:var(--amber);border-color:var(--amber)}
+  .btn.solid:hover{background:#ffc472;border-color:#ffc472}
+  .btn:focus-visible,.mini:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+
+  .meter{display:flex;align-items:center;gap:12px;min-width:230px}
+  .ring{
+    --p:0;--c:var(--dim2);
+    width:46px;height:46px;border-radius:50%;flex:none;position:relative;
+    display:grid;place-items:center;
+    background:conic-gradient(var(--c) calc(var(--p) * 1%),rgba(148,163,184,.12) 0);
+    transition:--p .4s ease;
+  }
+  .ring::before{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--bg2)}
+  .ring span{position:relative;font:600 11px/1 var(--mono);letter-spacing:-.02em;color:var(--txt)}
+  .ring.good{--c:var(--green)}
+  .ring.mid{--c:var(--amber)}
+  .ring.low{--c:var(--red)}
+  .meterTxt{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .meterTxt b{font:600 13px/1.2 var(--cn);letter-spacing:.02em}
+  .meterTxt span{font:500 10px/1.2 var(--mono);color:var(--dim2);letter-spacing:.04em;white-space:nowrap}
+
+  .banner{
+    max-width:1480px;margin:14px auto 0;padding:12px 16px;
+    border:1px solid rgba(255,107,107,.35);border-left:3px solid var(--red);
+    border-radius:4px;background:rgba(255,107,107,.07);
+    color:#ffd9d9;font-size:13px;
+    display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;
+  }
+  .banner b{font-weight:700;color:#fff;letter-spacing:.02em}
+  .banner a{color:var(--amber);text-decoration:none}
+  .banner a:hover{text-decoration:underline}
+  .banner[hidden]{display:none}
+
+  /* ── 分组 ── */
+  main{max-width:1480px;margin:0 auto;padding:10px 36px 0}
+  .group{margin-top:34px}
+  .ghead{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .gno{font:600 11px/1 var(--mono);color:var(--amber);letter-spacing:.16em}
+  .ghead h2{
+    margin:0;font-size:16px;font-weight:650;letter-spacing:.09em;
+    font-family:var(--cn);
+  }
+  .grule{flex:1;height:1px;background:linear-gradient(90deg,var(--line2),transparent)}
+  .gnote{font:500 11px/1 var(--mono);letter-spacing:.08em;color:var(--dim2);white-space:nowrap}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(276px,1fr));gap:14px}
+
+  /* ── 卡片 ── */
+  .card{
+    position:relative;display:flex;flex-direction:column;
+    padding:16px 16px 12px;border:1px solid var(--line);border-radius:6px;
+    background:linear-gradient(180deg,rgba(255,255,255,.032),transparent 42%),var(--panel);
+    cursor:pointer;outline:0;
+    transition:border-color .18s ease,transform .18s ease,box-shadow .18s ease,background .18s ease;
+    animation:rise .5s cubic-bezier(.2,.7,.3,1) both;
+    animation-delay:calc(var(--i,0) * 45ms);
+  }
+  .card::before{
+    content:"";position:absolute;left:-1px;top:14px;bottom:14px;width:2px;border-radius:2px;
+    background:var(--amber);opacity:0;transform:scaleY(.3);
+    transition:opacity .2s ease,transform .2s ease;
+  }
+  .card:hover,.card:focus-visible{
+    border-color:rgba(255,180,84,.4);
+    background:linear-gradient(180deg,rgba(255,180,84,.055),transparent 40%),var(--panel2);
+    transform:translateY(-3px);
+    box-shadow:0 22px 44px -30px #000;
+  }
+  .card:hover::before,.card:focus-visible::before{opacity:1;transform:scaleY(1)}
+  .card:focus-visible{outline:2px solid rgba(255,180,84,.7);outline-offset:3px}
+  .card:active{transform:translateY(-1px)}
+  /* 唯一会动机器人的入口：常亮左侧琥珀条，和只读卡片区分开 */
+  .card.ctl{
+    border-color:rgba(255,180,84,.3);
+    background:linear-gradient(180deg,rgba(255,180,84,.05),transparent 42%),var(--panel);
+  }
+  .card.ctl::before{opacity:.6;transform:scaleY(.55)}
+  .card.ctl:hover::before,.card.ctl:focus-visible::before{opacity:1;transform:scaleY(1)}
+
+  .chead{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .idx{font:600 10px/1 var(--mono);letter-spacing:.14em;color:var(--dim2)}
+  .chead .fill{flex:1}
+  .port{
+    font:600 11px/1 var(--mono);letter-spacing:.03em;color:var(--dim);
+    border:1px solid var(--line);border-radius:4px;padding:4px 7px;
+    background:rgba(0,0,0,.22);
+  }
+  .card h3{
+    margin:0 0 4px;font-size:19px;font-weight:650;letter-spacing:.03em;line-height:1.25;
+    display:flex;align-items:baseline;gap:10px;
+  }
+  .lat{
+    margin-left:auto;flex:none;
+    font:600 9px/1 var(--mono);letter-spacing:.16em;color:var(--dim2);
+    transform:translateY(-1px);
+  }
+  .desc{
+    margin:0 0 16px;color:var(--dim);font-size:12.5px;line-height:1.65;
+    min-height:2.9em;
+  }
+  .desc b{color:#cfdae2;font-weight:600}
+
+  .cfoot{
+    margin-top:auto;padding-top:10px;border-top:1px solid var(--line);
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  }
+  .tag{
+    font:600 9.5px/1 var(--cn);letter-spacing:.1em;color:var(--dim);
+    border:1px solid var(--line);border-radius:3px;padding:4px 6px;
+    white-space:nowrap;
+  }
+  .tag.ctl{color:#ffcf8a;border-color:rgba(255,180,84,.42);background:rgba(255,180,84,.08)}
+  .acts{margin-left:auto;display:flex;align-items:center;gap:6px}
+  .stat{display:inline-flex;align-items:center;gap:6px;margin-right:4px}
+  .stat em{font:500 10px/1 var(--cn);font-style:normal;color:var(--dim2);letter-spacing:.04em;white-space:nowrap}
+  .led{
+    width:6px;height:6px;border-radius:50%;flex:none;background:#3b4852;
+    transition:.2s ease;
+  }
+  .led[data-state="probe"]{background:var(--amber);animation:blink 1.15s ease-in-out infinite}
+  .led[data-state="on"]{background:var(--green);box-shadow:0 0 0 3px rgba(78,224,138,.13),0 0 11px rgba(78,224,138,.85)}
+  .led[data-state="off"]{background:#8d3333;box-shadow:0 0 0 3px rgba(255,107,107,.07)}
+  .led[data-state="unknown"]{background:#5b6670}
+  .card[data-online="1"] .stat em{color:rgba(78,224,138,.85)}
+  .card[data-online="0"] .stat em{color:rgba(255,107,107,.72)}
+
+  .mini{
+    appearance:none;cursor:pointer;
+    font:600 10.5px/1 var(--cn);letter-spacing:.05em;
+    padding:6px 8px;border-radius:4px;border:1px solid transparent;
+    background:transparent;color:var(--dim);text-decoration:none;
+    transition:.15s ease;white-space:nowrap;
+  }
+  .mini:hover{color:var(--txt);border-color:var(--line2);background:rgba(255,255,255,.04)}
+  .mini.open{color:var(--amber)}
+  .mini.open:hover{border-color:rgba(255,180,84,.4);background:var(--amber-soft)}
+
+  /* 流水线连接箭头（仅宽屏） */
+  @media (min-width:1180px){
+    .flow .card:not(:last-child)::after{
+      content:"→";position:absolute;right:-16px;top:50%;
+      transform:translateY(-50%);z-index:2;
+      font:400 13px/1 var(--mono);color:rgba(255,180,84,.5);
+      text-shadow:0 0 12px rgba(255,180,84,.4);
+      pointer-events:none;
+    }
+  }
+
+  /* ── 运维速查 ── */
+  .ops{
+    max-width:1480px;margin:34px auto 0;padding:0 36px;
+  }
+  .ops > summary{
+    cursor:pointer;list-style:none;
+    display:flex;align-items:center;gap:10px;
+    padding:12px 14px;border:1px solid var(--line);border-radius:6px;
+    background:linear-gradient(180deg,rgba(255,255,255,.025),transparent),var(--panel);
+    font-size:13px;font-weight:600;letter-spacing:.04em;color:var(--dim);
+    transition:.16s ease;
+  }
+  .ops > summary::-webkit-details-marker{display:none}
+  .ops > summary:hover{color:var(--txt);border-color:var(--line2)}
+  .ops > summary .k{font:600 10px/1 var(--mono);letter-spacing:.16em;color:var(--amber)}
+  .ops > summary .arrow{margin-left:auto;color:var(--dim2);transition:transform .2s ease}
+  .ops[open] > summary .arrow{transform:rotate(90deg)}
+  .commands{
+    margin-top:10px;border:1px solid var(--line);border-radius:6px;overflow:hidden;
+    background:var(--panel);
+  }
+  .cmd{
+    display:flex;align-items:center;gap:12px;
+    padding:9px 12px;border-bottom:1px solid var(--line);
+  }
+  .cmd:last-child{border-bottom:0}
+  .cmd .what{flex:none;width:190px;color:var(--dim);font-size:12px;letter-spacing:.02em}
+  .cmd code{
+    flex:1;min-width:0;
+    white-space:pre-wrap;overflow-wrap:anywhere;
+    font:500 12px/1.5 var(--mono);color:#c9d8e2;
+  }
+  .cmd .mini{border-color:var(--line)}
+
+  /* ── 注意 / 页脚 ── */
+  .notes{
+    max-width:1480px;margin:26px auto 0;padding:0 36px;
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;
+  }
+  @media (min-width:900px){
+    .notes{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 26px}
+  }
+  .note{
+    border-left:2px solid rgba(255,180,84,.35);
+    padding:2px 0 2px 12px;color:var(--dim);font-size:12px;line-height:1.7;
+  }
+  .note.warn{border-left-color:var(--amber);color:#e7d3b4}
+  .note.warn b{color:var(--amber)}
+  .note b{color:#d8c7a8;font-weight:600;margin-right:4px}
+  footer{
+    max-width:1480px;margin:0 auto;padding:34px 36px 46px;
+    display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+    color:var(--dim2);font-size:11px;letter-spacing:.03em;
+  }
+  footer .kbd{
+    font:600 10px/1 var(--mono);letter-spacing:.06em;color:var(--dim);
+    border:1px solid var(--line);border-radius:3px;padding:4px 6px;
+  }
+
+  /* ── Toast ── */
+  #toast{
+    position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);
+    background:#161d23;border:1px solid var(--line2);border-left:2px solid var(--amber);
+    color:var(--txt);font-size:12.5px;padding:10px 15px;border-radius:5px;
+    box-shadow:0 18px 40px -18px #000;
+    opacity:0;pointer-events:none;transition:.22s ease;z-index:99;max-width:88vw;
+  }
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  @keyframes blink{0%,100%{opacity:.35}50%{opacity:1}}
+
+  /* ── 响应式 ── */
+  @media (max-width:900px){
+    .mast{padding:26px 20px 18px;flex-direction:column;align-items:stretch}
+    .brand,.clock{width:100%}
+    .clock{text-align:left}
+    .clock::before{display:none}
+    .console,main,.ops,.notes,footer{padding-left:20px;padding-right:20px}
+    .console{padding-bottom:0}
+    .hostfield{width:100%;flex-wrap:wrap;row-gap:8px}
+    #host{flex:1 1 110px;width:auto;min-width:0}
+    .hostfield .btn{flex:none}
+    .meter{width:100%;justify-content:flex-start}
+    .cmd .what{width:auto;min-width:0;flex:none;max-width:40%}
+    .cmd code{font-size:11px}
+  }
+  @media (max-width:560px){
+    .card h3{font-size:18px}
+    .lat{display:none}
+    .cfoot{row-gap:8px}
+    .acts{margin-left:0;width:100%;justify-content:flex-end}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"></div>
+
+<header class="mast">
+  <div class="brand">
+    <div class="kicker"><i></i>TA2 // REMOTE OPS</div>
+    <h1>工作台<span class="slash">/</span>总台</h1>
+    <p class="sub">危境取物 · 怀客松具身智能 &nbsp;·&nbsp; B70 上 <b>9 个控制台 + 文件浏览</b>，一页直达</p>
+  </div>
+  <div class="clock" aria-hidden="true">
+    <div class="time" id="clock">--:--<span>:</span>--</div>
+    <div class="date" id="date">————</div>
+    <div class="tz">UTC+8 · ASIA/SHANGHAI</div>
+  </div>
+</header>
+
+<div class="console">
+  <div class="hostfield">
+    <label for="host">B70 主机</label>
+    <span class="proto">http://</span>
+    <input id="host" value="192.168.31.228" spellcheck="false" autocomplete="off" aria-label="B70 主机地址">
+    <button id="apply" class="btn solid" type="button">应用</button>
+    <button id="reprobe" class="btn" type="button">重新探测</button>
+  </div>
+  <div class="meter" aria-live="polite">
+    <div class="ring" id="ring" style="--p:0"><span id="ringText">–</span></div>
+    <div class="meterTxt">
+      <b id="summary">等待探测</b>
+      <span id="lastProbe">尚未探测</span>
+    </div>
+  </div>
+</div>
+
+<div class="banner" id="banner" hidden>
+  <b id="bannerTitle">探测全部失败</b>
+  <span id="bannerTxt">B70 可能未开机，或 IP 变了。可在 B70 上跑 <code>hostname -I</code> 查到新地址后填到左上角。</span>
+  <a id="onlineLink" href="#" target="_blank" rel="noopener" hidden>在 B70 上打开本页 ↗</a>
+</div>
+
+<main>
+  <section class="group" aria-labelledby="g1">
+    <div class="ghead">
+      <span class="gno">01</span><h2 id="g1">数据流水线</h2>
+      <span class="grule"></span><span class="gnote">mcap → LeRobot → 训练集</span>
+    </div>
+    <div class="grid flow" id="group1">
+      <article class="card" data-port="8090" tabindex="0" role="link" aria-label="打开下载台" style="--i:0">
+        <div class="chead"><span class="idx">01</span><span class="fill"></span><span class="port">:8090</span></div>
+        <h3>下载台<span class="lat">DOWNLOAD</span></h3>
+        <p class="desc">从机器人挑记录 → 下载 → 校验 → 解压，落盘 <b>records_&lt;日期&gt;</b></p>
+        <div class="cfoot">
+          <span class="tag">数采入口</span>
+          <span class="acts">
+            <span class="stat"><i class="led" data-state="probe"></i><em>探测中</em></span>
+            <button class="mini copy" type="button">复制</button>
+            <a class="mini open" target="_blank" rel="noopener" tabindex="-1">打开 ↗</a>
+          </span>
+        </div>
+      </article>
+
+      <article class="card" data-port="8095" tabindex="0" role="link" aria-label="打开转化台" style="--i:1">
+        <div class="chead"><span class="idx">02</span><span class="fill"></span><span class="port">:8095</span></div>
+        <h3>转化台<span class="lat">CONVERT</span></h3>
+        <p class="desc">按「训练组」挑记录，用官方 docker 镜像转 <b>LeRobot v2.1</b></p>
+        <div class="cfoot">
+          <span class="tag">docker 转换</span>
+          <span class="acts">
+            <span class="stat"><i class="led" data-state="probe"></i><em>探测中</em></span>
+            <button class="mini copy" type="button">复制</button>
+            <a class="mini open" target="_blank" rel="noopener" tabindex="-1">打开 ↗</a>
+          </span>
+        </div>
+      </article>
+
+      <article class="card" data-port="8093" tabindex="0" role="link" aria-label="打开筛选台" style="--i:2">
+        <div class="chead"><span class="idx">03</span><span class="fill"></span><span class="port">:8093</span></div>
+        <h3>筛选台<span class="lat">REVIEW</span></h3>
+        <p class="desc">三路视频逐条标「有效 / 无效」→ 导出单集，或合并训练集</p>
+        <div class="cfoot">
+          <span class="tag">数据质检</span>
+          <span class="acts">
+            <span class="stat"><i class="led" data-state="probe"></i><em>探测中</em></span>
+            <button class="mini copy" type="button">复制</button>
+            <a class="mini open" target="_blank" rel="noopener" tabindex="-1">打开 ↗</a>
+          </span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="group" aria-labelledby="g2">
+    <div class="ghead">
+      <span class="gno">02</span><h2 id="g2">真机感知与判定</h2>
+      <span class="grule"></span><span class="gnote">只读 · 不控制机器人</span>
+    </div>
+    <div class="grid" id="group2">
+      <article class="card" data-port="8097" tabindex="0" role="link" aria-label="打开视觉查看器" style="--i:0">
+        <div class="chead"><span class="idx">04</span><span class="fill"></span><span class="port">:8097</span></div>
+        <h3>视觉查看器<span class="lat">VISION</span></h3>
+        <p class="desc">机器人六路实时画面，手机也能开；同时占用 <b>UDP&nbsp;8890</b></p>
+        <div class="cfoot">
+          <span class="tag">MJPEG</span>
+          <span class="acts">
+            <span class="stat"><i class="led" data-state="probe"></i><em>探测中</em></span>
+            <button class="mini copy" type="button">复制</button>
+            <a class="mini open" target="_blank" rel="noopener" tabindex="-1">打开 ↗</a>
+          </span>
+        </div>
+      </article>
+
+      <article class="card" data-port="8100" tabindex="0" role="link" aria-label="打开感知台" style="--i:1">
+        <div class="chead"><span class="idx">05</span><span class="fill"></span><span class="port">:8100</span></div>
+        <h3>感知台 · 沙包定位<span class="lat">PERCEPTION</span></h3>
+        <p class="desc">头部全局观察 + 双腕复核，停稳后给三维坐标；含标定与标注</p>
+        <div class="cfoot">
+          <span class="tag">只读</span>
+          <span class="acts">
+            <span class="stat"><i class="led" data-state="probe"></i><em>探测中</em></span>
+            <button class="mini copy" type="button">复制</button>
+            <a class="mini open" target="_blank" rel="noopener" tabindex="-1">打开 ↗</a>
+          </span>
+        </div>
+      </article>
+
+      <article class="card" data-port="8101" tabindex="0" role="link" aria-label="打开抓取判定台" style="--i:2">
+        <div class="chead"><span class="idx">06</span><span class="fill"></span><span class="port">:8101</span></div>
+        <h3>抓取判定台<span class="lat">GRASP</span></h3>
+        <p class="desc">腕部光流 + 头部旁证，判「真抓住 / 局部夹持 / 没抓住」，可采集</p>
+        <div class="cfoot">
+          <span class="tag">只读</span>
+          <span class="acts">
+            <span class="stat"><i class="led" data-state="probe"></i><em>探测中</em></span>
+            <button class="mini copy" type="button">复制</button>
+            <a class="mini open" target="_blank" rel="noopener" tabindex="-1">打开 ↗</a>
+          </span>
+        </div>
+      </article>
+
+      <article class="card" data-port="8102" tabindex="0" role="link" aria-label="打开头部双目深度" style="--i:3">
+        <div class="chead"><span class="idx">07</span><span class="fill"></span><span class="port">:8102</span></div>
+        <h3>头部双目深度<span class="lat">DEPTH</span></h3>
+        <p class="desc">左眼画面与同帧深度并排，可下载毫米 PNG；FoundationStereo</p>
+        <div class="cfoot">
+          <span class="tag">预览</span>
+          <span class="acts">
+            <span class="stat"><i class="led" data-state="probe"></i><em>探测中</em></span>
+            <button class="mini copy" type="button">复制</button>
+            <a class="mini open" target="_blank" rel="noopener" tabindex="-1">打开 ↗</a>
+          </span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="group" aria-labelledby="g3">
+    <div class="ghead">
+      <span class="gno">03</span><h2 id="g3">运行 · 遥控与设备</h2>
+      <span class="grule"></span><span class="gnote">遥控会动机器人 · 监控 · 文件</span>
+    </div>
+    <div class="grid" id="group3">
+      <article class="card ctl" data-port="8088" tabindex="0" role="link" aria-label="打开任务遥控台" style="--i:0">
+        <div class="chead"><span class="idx">08</span><span class="fill"></span><span class="port">:8088</span></div>
+        <h3>任务遥控台<span class="lat">TELEOP</span></h3>
+        <p class="desc">底盘 / 手臂 / 路线 / VLA 抓取，<b>会真的动机器人</b>；急停是页面红钮或 Esc</p>
+        <div class="cfoot">
+          <span class="tag ctl">可控制</span>
+          <span class="acts">
+            <span class="stat"><i class="led" data-state="probe"></i><em>探测中</em></span>
+            <button class="mini copy" type="button">复制</button>
+            <a class="mini open" target="_blank" rel="noopener" tabindex="-1">打开 ↗</a>
+          </span>
+        </div>
+      </article>
+
+      <article class="card" data-port="8096" tabindex="0" role="link" aria-label="打开推理监控台" style="--i:1">
+        <div class="chead"><span class="idx">09</span><span class="fill"></span><span class="port">:8096</span></div>
+        <h3>推理监控台<span class="lat">MONITOR</span></h3>
+        <p class="desc">π0.5 真机推理：p50/p95、动作块、关节限位，可回放历史 run</p>
+        <div class="cfoot">
+          <span class="tag">只读</span>
+          <span class="acts">
+            <span class="stat"><i class="led" data-state="probe"></i><em>探测中</em></span>
+            <button class="mini copy" type="button">复制</button>
+            <a class="mini open" target="_blank" rel="noopener" tabindex="-1">打开 ↗</a>
+          </span>
+        </div>
+      </article>
+
+      <article class="card" data-port="5173" data-host="192.168.31.218" tabindex="0" role="link" aria-label="打开机器人本体页面" style="--i:2">
+        <div class="chead"><span class="idx">10</span><span class="fill"></span><span class="port">192.168.31.218:5173</span></div>
+        <h3>机器人本体<span class="lat">ROBOT</span></h3>
+        <p class="desc">在线录制与数据服务，独立一台机器；mcap 的源头</p>
+        <div class="cfoot">
+          <span class="tag">外部设备</span>
+          <span class="acts">
+            <span class="stat"><i class="led" data-state="probe"></i><em>探测中</em></span>
+            <button class="mini copy" type="button">复制</button>
+            <a class="mini open" target="_blank" rel="noopener" tabindex="-1">打开 ↗</a>
+          </span>
+        </div>
+      </article>
+
+      <article class="card" data-port="8091" tabindex="0" role="link" aria-label="打开 B70 文件浏览" style="--i:3">
+        <div class="chead"><span class="idx">11</span><span class="fill"></span><span class="port">:8091</span></div>
+        <h3>B70 文件浏览<span class="lat">FILES</span></h3>
+        <p class="desc">直接浏览 <b>/data/ta2</b> 目录，点文件就能下载，不用 scp</p>
+        <div class="cfoot">
+          <span class="tag">工具</span>
+          <span class="acts">
+            <span class="stat"><i class="led" data-state="probe"></i><em>探测中</em></span>
+            <button class="mini copy" type="button">复制</button>
+            <a class="mini open" target="_blank" rel="noopener" tabindex="-1">打开 ↗</a>
+          </span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <details class="ops">
+    <summary><span class="k">OPS</span> 运维速查 · 服务起停与排障命令 <span class="arrow">▸</span></summary>
+    <div class="commands">
+      <div class="cmd"><span class="what">登录 B70</span><code data-cmd="ssh root@192.168.31.228">ssh root@192.168.31.228</code><button class="mini copy" type="button">复制</button></div>
+      <div class="cmd"><span class="what">数据三台状态</span><code data-cmd="/data/ta2/tools/ta2_services.sh status">/data/ta2/tools/ta2_services.sh status</code><button class="mini copy" type="button">复制</button></div>
+      <div class="cmd"><span class="what">全部启动</span><code data-cmd="/data/ta2/tools/ta2_services.sh start">/data/ta2/tools/ta2_services.sh start</code><button class="mini copy" type="button">复制</button></div>
+      <div class="cmd"><span class="what">全部重启</span><code data-cmd="/data/ta2/tools/ta2_services.sh restart">/data/ta2/tools/ta2_services.sh restart</code><button class="mini copy" type="button">复制</button></div>
+      <div class="cmd"><span class="what">视觉链路自检</span><code data-cmd="/data/ta2/tools/ta2_vision_ops.sh selftest">/data/ta2/tools/ta2_vision_ops.sh selftest</code><button class="mini copy" type="button">复制</button></div>
+      <div class="cmd"><span class="what">推理监控摘要</span><code data-cmd="/data/ta2/tools/ta2_monitor_ops.sh status">/data/ta2/tools/ta2_monitor_ops.sh status</code><button class="mini copy" type="button">复制</button></div>
+      <div class="cmd"><span class="what">感知 / 抓取 / 深度</span><code data-cmd="systemctl status ta2-perception ta2-grasp ta2-head-depth">systemctl status ta2-perception ta2-grasp ta2-head-depth</code><button class="mini copy" type="button">复制</button></div>
+      <div class="cmd"><span class="what">重启抓取判定台</span><code data-cmd="systemctl restart ta2-grasp">systemctl restart ta2-grasp</code><button class="mini copy" type="button">复制</button></div>
+      <div class="cmd"><span class="what">看深度日志</span><code data-cmd="journalctl -u ta2-head-depth -n 50 -f">journalctl -u ta2-head-depth -n 50 -f</code><button class="mini copy" type="button">复制</button></div>
+      <div class="cmd"><span class="what">查 B70 当前 IP</span><code data-cmd="hostname -I">hostname -I</code><button class="mini copy" type="button">复制</button></div>
+      <div class="cmd"><span class="what">端口一览</span><code data-cmd="ss -ltn | grep -E ':(8088|8090|8091|8093|8095|8096|8097|8100|8101|8102)'">ss -ltn | grep -E ':(8088|8090|8091|8093|8095|8096|8097|8100|8101|8102)'</code><button class="mini copy" type="button">复制</button></div>
+      <div class="cmd"><span class="what">任务遥控日志</span><code data-cmd="tail -n 50 /root/web_move.log">tail -n 50 /root/web_move.log</code><button class="mini copy" type="button">复制</button></div>
+      <div class="cmd"><span class="what">本总台状态</span><code data-cmd="systemctl status ta2-home">systemctl status ta2-home</code><button class="mini copy" type="button">复制</button></div>
+    </div>
+  </details>
+
+  <div class="notes">
+    <p class="note warn"><b>8088 是唯一会动的入口。</b>遥控台会下发底盘 / 手臂 / 路线 / VLA 指令；急停 = 页面红色按钮或 Esc，软件急停之后硬件急停仍要在手边。</p>
+    <p class="note"><b>8890 只有一个。</b>视觉查看器占着 UDP 8890；跑推理时由 client 占用，抓取判定台会显示「画面中断」，这是正常的，不是坏了。</p>
+    <p class="note"><b>机器人只推一个 IP。</b>远端 IP 指向 B70 时，Windows 上的 ta2-vision 就收不到流；要切回来得改机器人系统配置。</p>
+    <p class="note"><b>其余页面只读。</b>观看、采集与判定页面不控制机器人；停机器人以遥控台急停、<b>Ctrl+C client</b> 和物理急停为准。</p>
+  </div>
+</main>
+
+<footer>
+  <span>TA2 · 危境取物 / 怀客松 2026 &nbsp;·&nbsp; 静态页，只做入口与探活，不写任何数据</span>
+  <span><span class="kbd">1–9 / 0</span> 直接打开（前 10 个） &nbsp; <span class="kbd">R</span> 重新探测</span>
+</footer>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<noscript><p style="padding:24px 36px;color:#ffb454">本页需要 JavaScript 才能探测服务状态；链接本身仍可点击。</p></noscript>
+
+<script>
+(function(){
+  'use strict';
+
+  var DEFAULT_HOST = '192.168.31.228';
+  var cards = Array.prototype.slice.call(document.querySelectorAll('.card'));
+  var hostInput = document.getElementById('host');
+  var ring = document.getElementById('ring');
+  var ringText = document.getElementById('ringText');
+  var summary = document.getElementById('summary');
+  var lastProbe = document.getElementById('lastProbe');
+  var banner = document.getElementById('banner');
+  var bannerTxt = document.getElementById('bannerTxt');
+  var onlineLink = document.getElementById('onlineLink');
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  var probing = false;
+  var b70Cards = cards.filter(function(c){ return !c.dataset.host; });
+
+  /* ── 地址解析 ───────────────────────────────── */
+  function normalizeHost(value){
+    var v = String(value || '').trim().replace(/^https?:\/\//i, '');
+    v = v.split('/')[0].split('?')[0].replace(/:\d+$/, '');
+    return v;
+  }
+  function initialHost(){
+    var q = null;
+    try { q = new URLSearchParams(location.search).get('host'); } catch(e){}
+    if (q) return normalizeHost(q);
+    if (/^https?:$/.test(location.protocol) &&
+        location.hostname && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      return location.hostname;
+    }
+    try {
+      var saved = localStorage.getItem('ta2.host');
+      if (saved) return normalizeHost(saved);
+    } catch(e){}
+    return DEFAULT_HOST;
+  }
+  function urlFor(card){
+    var h = card.dataset.host || hostInput.value || DEFAULT_HOST;
+    return location.protocol + '//' + h + ':' + card.dataset.port + '/';
+  }
+
+  /* ── 时钟 ──────────────────────────────────── */
+  function tick(){
+    var now = new Date();
+    var t = new Intl.DateTimeFormat('zh-CN', {
+      timeZone:'Asia/Shanghai', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false
+    }).format(now);
+    document.getElementById('clock').innerHTML = t.split(':').join('<span>:</span>');
+    var d = new Intl.DateTimeFormat('zh-CN', {
+      timeZone:'Asia/Shanghai', year:'numeric', month:'2-digit', day:'2-digit', weekday:'short'
+    }).format(now);
+    document.getElementById('date').textContent = d.replace(/\//g, '.').replace(/(\d)(周)/, '$1 $2');
+  }
+
+  /* ── 探活 ──────────────────────────────────── */
+  function probeOne(url, timeout){
+    return new Promise(function(resolve){
+      var ctrl = new AbortController();
+      var timer = setTimeout(function(){ ctrl.abort(); }, timeout || 4000);
+      fetch(url + (url.indexOf('?') < 0 ? '?' : '&') + '_=' + Date.now(), {
+        mode:'no-cors', cache:'no-store', redirect:'follow', signal:ctrl.signal
+      }).then(function(){
+        clearTimeout(timer); resolve(true);
+      }).catch(function(){
+        clearTimeout(timer); resolve(false);
+      });
+    });
+  }
+
+  function setCard(card, online){
+    card.dataset.online = online ? '1' : '0';
+    var led = card.querySelector('.led');
+    var text = card.querySelector('.stat em');
+    led.dataset.state = online ? 'on' : 'off';
+    text.textContent = online ? '在线' : '打不开';
+  }
+
+  function setCardUnknown(card){
+    card.dataset.online = '';
+    card.querySelector('.led').dataset.state = 'unknown';
+    card.querySelector('.stat em').textContent = '未知';
+  }
+
+  function paintMeter(onlineCount, total, robotState){
+    var pct = total ? Math.round(onlineCount / total * 100) : 0;
+    ring.style.setProperty('--p', pct);
+    ring.classList.remove('good','mid','low');
+    ring.classList.add(pct >= 80 ? 'good' : (pct >= 40 ? 'mid' : 'low'));
+    ringText.textContent = onlineCount + '/' + total;
+    var robot = robotState === true ? '在线' : (robotState === false ? '打不开' : '未探测');
+    summary.textContent = 'B70 在线 ' + onlineCount + '/' + total + ' · 机器人 ' + robot;
+    lastProbe.textContent = new Intl.DateTimeFormat('zh-CN', {
+      timeZone:'Asia/Shanghai', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false
+    }).format(new Date()) + ' 探测';
+  }
+
+  function paintUnknown(){
+    ring.style.setProperty('--p', 0);
+    ring.classList.remove('good','mid','low');
+    ringText.textContent = '—';
+    summary.textContent = '本页无法探测';
+    lastProbe.textContent = '双击打开时状态不可靠';
+  }
+
+  function probeAll(){
+    if (probing) return;
+    probing = true;
+    banner.hidden = true;
+    b70Cards.forEach(function(c){
+      c.querySelector('.led').dataset.state = 'probe';
+      c.querySelector('.stat em').textContent = '探测中';
+    });
+    summary.textContent = '探测中…';
+    ring.classList.remove('good','mid','low');
+
+    var jobs = cards.map(function(card){
+      return probeOne(urlFor(card)).then(function(ok){ return { card: card, ok: ok }; });
+    });
+
+    Promise.all(jobs).then(function(results){
+      var onlineB70 = 0;
+      var robotState = null;
+      results.forEach(function(r){
+        setCard(r.card, r.ok);
+        if (r.card.dataset.host) {
+          robotState = r.ok;
+        } else if (r.ok) {
+          onlineB70++;
+        }
+      });
+      if (onlineB70 === 0 && location.protocol === 'file:') {
+        /* 双击打开的页面无法可靠探测局域网：不标红，避免误判「服务全挂了」 */
+        cards.forEach(setCardUnknown);
+        paintUnknown();
+        document.getElementById('bannerTitle').textContent = '无法探测（file://）';
+        bannerTxt.innerHTML = '本页是双击打开的（file://），浏览器通常会拦截它对局域网的探测，所以这里的灯不可信；卡片链接照样能点。'
+          + '建议把下面的在线版存成书签，从 <b>' + (hostInput.value || DEFAULT_HOST) + ':8103</b> 打开，状态才准。';
+        banner.hidden = false;
+        return;
+      }
+      paintMeter(onlineB70, b70Cards.length, robotState);
+      if (onlineB70 === 0) {
+        document.getElementById('bannerTitle').textContent = '探测全部失败';
+        bannerTxt.textContent = 'B70 可能未开机，或 IP 变了：在 B70 上跑 hostname -I 查新地址。';
+        banner.hidden = false;
+      }
+    }).catch(function(){
+      summary.textContent = '探测异常';
+    }).then(function(){
+      probing = false;
+    });
+  }
+
+  /* ── 链接与复制 ─────────────────────────────── */
+  function refreshLinks(){
+    cards.forEach(function(card){
+      var url = urlFor(card);
+      var a = card.querySelector('a.open');
+      a.href = url;
+      card.setAttribute('aria-label', '打开' + card.querySelector('h3').textContent.replace(/[A-Z]+$/, '').trim());
+    });
+    if (location.protocol === 'file:') {
+      onlineLink.href = 'http://' + (hostInput.value || DEFAULT_HOST) + ':8103/';
+      onlineLink.hidden = false;
+    }
+  }
+
+  function toast(message){
+    toastEl.textContent = message;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 1900);
+  }
+
+  function copyText(text){
+    var p = null;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      p = navigator.clipboard.writeText(text).then(function(){ return true; }, function(){ return false; });
+    } else {
+      p = Promise.resolve(false);
+    }
+    return p.then(function(ok){
+      if (ok) return true;
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly','');
+        ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+        document.body.appendChild(ta);
+        ta.select();
+        var done = document.execCommand('copy');
+        ta.remove();
+        return done;
+      } catch(e){ return false; }
+    });
+  }
+
+  function openCard(card){
+    window.open(urlFor(card), '_blank', 'noopener');
+  }
+
+  cards.forEach(function(card){
+    card.addEventListener('click', function(ev){
+      if (ev.target.closest('.acts')) return;
+      openCard(card);
+    });
+    card.addEventListener('keydown', function(ev){
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        openCard(card);
+      }
+    });
+    card.querySelector('.copy').addEventListener('click', function(ev){
+      ev.stopPropagation();
+      var url = urlFor(card);
+      copyText(url).then(function(ok){
+        toast(ok ? '已复制 · ' + url : '复制失败，请手动打开：' + url);
+      });
+    });
+    card.querySelector('a.open').addEventListener('click', function(ev){
+      ev.stopPropagation();
+    });
+  });
+
+  document.querySelectorAll('.cmd .copy').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var code = btn.parentElement.querySelector('code');
+      var cmd = code.dataset.cmd || code.textContent;
+      copyText(cmd).then(function(ok){
+        toast(ok ? '已复制命令' : '复制失败');
+      });
+    });
+  });
+
+  /* ── 主机切换 ───────────────────────────────── */
+  function applyHost(){
+    var value = normalizeHost(hostInput.value);
+    if (!/^[A-Za-z0-9._-]+$/.test(value)) {
+      toast('只填 IP 或主机名，例如 192.168.31.228');
+      hostInput.focus();
+      return;
+    }
+    hostInput.value = value;
+    try { localStorage.setItem('ta2.host', value); } catch(e){}
+    refreshLinks();
+    probeAll();
+  }
+  document.getElementById('apply').addEventListener('click', applyHost);
+  document.getElementById('reprobe').addEventListener('click', probeAll);
+  hostInput.addEventListener('keydown', function(ev){
+    if (ev.key === 'Enter') { ev.preventDefault(); applyHost(); }
+  });
+
+  /* ── 快捷键 ─────────────────────────────────── */
+  document.addEventListener('keydown', function(ev){
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    var t = ev.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (/^[0-9]$/.test(ev.key)) {
+      var i = ev.key === '0' ? 9 : Number(ev.key) - 1;
+      if (cards[i]) { ev.preventDefault(); openCard(cards[i]); }
+    } else if (ev.key === 'r' || ev.key === 'R') {
+      ev.preventDefault();
+      probeAll();
+    }
+  });
+
+  /* ── 启动 ──────────────────────────────────── */
+  hostInput.value = initialHost();
+  if (location.protocol === 'file:') {
+    onlineLink.href = 'http://' + hostInput.value + ':8103/';
+    onlineLink.hidden = false;
+  }
+  refreshLinks();
+  tick();
+  setInterval(tick, 1000);
+  probeAll();
+  var autoProbe = location.protocol !== 'file:';  /* 双击打开时探测不可靠，不做自动重探 */
+  setInterval(function(){
+    if (autoProbe && !document.hidden) probeAll();
+  }, 45000);
+  document.addEventListener('visibilitychange', function(){
+    if (autoProbe && !document.hidden) probeAll();
+  });
+})();
+</script>
+</body>
+</html>

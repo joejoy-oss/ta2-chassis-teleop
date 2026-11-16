@@ -1,0 +1,15 @@
+{
+  "source": "http://127.0.0.1:8097",
+  "port": 8101,
+  "side": "right",
+  "state_dir": "/data/ta2/grasp",
+  "max_frame_age_s": 0.6,
+  "ring_seconds": 20.0,
+  "ring_max": 240,
+  "save_frames": 60,
+  "max_attempts": 150,
+  "max_captures": 120,
+  "corroborate": true,
+  "operator": "",
+  "record_max_s": 20.0
+}

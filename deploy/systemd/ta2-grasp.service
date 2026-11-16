@@ -1,0 +1,20 @@
+[Unit]
+Description=TA2 wrist-camera grasp judge (read-only, :8101)
+Documentation=file:///data/ta2/tools/ta2_grasp/README.md
+After=network-online.target ta2-vision.service
+Wants=ta2-vision.service
+
+[Service]
+Type=simple
+WorkingDirectory=/data/ta2/tools/ta2_grasp
+ExecStart=/data/ta2/perception/venv/bin/python /data/ta2/tools/ta2_grasp/server.py --config /data/ta2/grasp/config.json
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/data/ta2/grasp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

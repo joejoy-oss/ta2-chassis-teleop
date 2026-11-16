@@ -1,0 +1,6 @@
+# Preserve imported B70 snapshots byte-for-byte, including original CRLF/spacing.
+deploy/runtime/** -text -whitespace
+deploy/config/** -text -whitespace
+tools/** -text -whitespace
+perception/** -text -whitespace
+home/** -text -whitespace

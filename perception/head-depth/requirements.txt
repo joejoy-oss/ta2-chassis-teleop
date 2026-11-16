@@ -1,0 +1,5 @@
+numpy==1.26.4
+opencv-contrib-python-headless==4.10.0.84
+openvino-telemetry==2025.2.0
+openvino==2026.4.1
+pip==24.0

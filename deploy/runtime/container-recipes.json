@@ -1,0 +1,181 @@
+[
+  {
+    "name": "grasp-v3-step20000-policy",
+    "image": "openpi-xpu-env:v0.1.0",
+    "image_id": "sha256:6ae851138457fb6c5e068c5e3f6f844fe2c0820a2c65794fe794f3ec3f46ffbb",
+    "repo_digests": [
+      "openpi-xpu-env@sha256:6ae851138457fb6c5e068c5e3f6f844fe2c0820a2c65794fe794f3ec3f46ffbb"
+    ],
+    "image_labels": {
+      "openpi.commit": "22a391be9d45b45e96a3a6818de16df589c23ff3",
+      "openpi.python": "3.11.17",
+      "openpi.torch": "2.12.1+xpu",
+      "openpi.uv": "0.13.5",
+      "org.opencontainers.image.version": "v0.1.0"
+    },
+    "entrypoint": [
+      "/usr/local/bin/openpi-xpu-entrypoint.sh"
+    ],
+    "command": [
+      "python",
+      "scripts/serve_policy.py",
+      "--env",
+      "TELEAVATAR",
+      "--port",
+      "8000",
+      "--default-prompt",
+      "抓取红色沙包",
+      "--warmup",
+      "--rtc.enabled",
+      "--rtc.mode",
+      "TRAINED",
+      "policy:checkpoint",
+      "--policy.config",
+      "pi05_teleavatar_v2_chassis",
+      "--policy.dir",
+      "/ckpt",
+      "--policy.pytorch-device",
+      "xpu",
+      "--policy.pytorch-compile-mode",
+      "default"
+    ],
+    "working_dir": "/app",
+    "mounts": [
+      {
+        "source": "/data/ta2/model_exports/grasp_v3_step20000_pytorch",
+        "destination": "/ckpt",
+        "rw": false
+      },
+      {
+        "source": "/data/ta2/sim_pipeline/openpi-assets",
+        "destination": "/openpi_assets",
+        "rw": true
+      },
+      {
+        "source": "/root/.cache/huggingface",
+        "destination": "/hf_home",
+        "rw": true
+      },
+      {
+        "source": "/data/ta2/model_exports/grasp_v3_eval/step20000_deployment/xpu-cache",
+        "destination": "/xpu-cache",
+        "rw": true
+      },
+      {
+        "source": "/data/ta2/model_exports/grasp_v3_eval/step20000_deployment",
+        "destination": "/outputs",
+        "rw": true
+      },
+      {
+        "source": "/data/ta2",
+        "destination": "/ta2data",
+        "rw": false
+      },
+      {
+        "source": "/dev/dri/by-path",
+        "destination": "/dev/dri/by-path",
+        "rw": true
+      },
+      {
+        "source": "/data/ta2/software/deploy/server/openpi",
+        "destination": "/app",
+        "rw": false
+      }
+    ],
+    "env": [
+      "TORCHINDUCTOR_CACHE_DIR=/xpu-cache/inductor",
+      "ZE_AFFINITY_MASK=1",
+      "PYTHONUNBUFFERED=1",
+      "OMP_NUM_THREADS=8",
+      "TRITON_CACHE_DIR=/xpu-cache/triton",
+      "PYTHONDONTWRITEBYTECODE=1",
+      "OPENPI_DATA_HOME=/openpi_assets",
+      "HF_HOME=/hf_home",
+      "JAX_PLATFORMS=cpu",
+      "PYTHONPATH=/app/src:/app/packages/openpi-client/src"
+    ],
+    "network": "bridge",
+    "port_bindings": {
+      "8000/tcp": [
+        {
+          "HostIp": "127.0.0.1",
+          "HostPort": "8005"
+        }
+      ]
+    },
+    "devices": [
+      {
+        "PathOnHost": "/dev/dri",
+        "PathInContainer": "/dev/dri",
+        "CgroupPermissions": "rwm"
+      }
+    ],
+    "shm_size": 8589934592,
+    "init": true,
+    "restart_policy": {
+      "Name": "no",
+      "MaximumRetryCount": 0
+    }
+  },
+  {
+    "name": "openpi-xpu-client",
+    "image": "openpi-xpu-client:v0.2.1",
+    "image_id": "sha256:a429bf1494e62175e75458b4eeeaf03a64b99b1986796ce88b3523f5c5ac47c3",
+    "repo_digests": [
+      "openpi-xpu-client@sha256:a429bf1494e62175e75458b4eeeaf03a64b99b1986796ce88b3523f5c5ac47c3"
+    ],
+    "image_labels": {
+      "openpi.client.lock-sha256": "24da06874820f127d6953c892966b4fae6c1a22c9dbcdc50dfc234204d1a5b35",
+      "openpi.commit": "29506182db83183feef7d0e560925dbcd5ebcdf2",
+      "openpi.intel-va": "libva 2.23.0 / gmmlib 22.9.0 / iHD 26.1.4",
+      "openpi.uv": "0.13.5",
+      "openpi.vapp-sha256": "37ab560d4f7e828ffb70aa70f21d12a036a9e54fe6bd81af4d46c560d55e58c9",
+      "org.opencontainers.image.version": "v0.2.1"
+    },
+    "entrypoint": [
+      "/usr/local/bin/openpi-client-entrypoint.sh"
+    ],
+    "command": [
+      "bash",
+      "-c",
+      "\ntrap \"kill \\$child 2> /dev/null; wait \\$child 2> /dev/null; exit 0\" TERM INT\nwhile true; do\n    echo \"$(date \"+%F %T %Z\") starting zenoh-bridge-ros2dds client -e $ZENOH_ENDPOINT -d $ROS_DOMAIN_ID\"\n    zenoh-bridge-ros2dds client -c /opt/openpi-client/zenoh-bridge-client.json5 -e \"$ZENOH_ENDPOINT\" \\\n        --no-multicast-scouting --ros-localhost-only -d \"$ROS_DOMAIN_ID\" &\n    child=$!\n    wait $child\n    echo \"$(date \"+%F %T %Z\") bridge exited with $?; restarting in 2 s\"\n    sleep 2\ndone >> /outputs/bridge.log 2>&1\n"
+    ],
+    "working_dir": "/app",
+    "mounts": [
+      {
+        "source": "/data/ta2/software/deploy/client/openpi",
+        "destination": "/app",
+        "rw": false
+      },
+      {
+        "source": "/root/openpi-xpu/client/outputs",
+        "destination": "/outputs",
+        "rw": true
+      }
+    ],
+    "env": [
+      "ROS_DOMAIN_ID=29",
+      "ZENOH_ENDPOINT=tcp/192.168.31.218:9000",
+      "PYTHONPATH=/app/packages/openpi-client/src",
+      "PYTHONUNBUFFERED=1",
+      "PYTHONDONTWRITEBYTECODE=1",
+      "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp",
+      "ROS_LOCALHOST_ONLY=1"
+    ],
+    "network": "host",
+    "port_bindings": {},
+    "devices": [
+      {
+        "PathOnHost": "/dev/dri/renderD128",
+        "PathInContainer": "/dev/dri/renderD128",
+        "CgroupPermissions": "rwm"
+      }
+    ],
+    "shm_size": 67108864,
+    "init": true,
+    "restart_policy": {
+      "Name": "no",
+      "MaximumRetryCount": 0
+    }
+  }
+]

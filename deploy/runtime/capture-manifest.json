@@ -1,0 +1,1029 @@
+{
+  "captured_utc": "2026-11-16T06:52:34.704694+00:00",
+  "source_host": "B70 / user",
+  "source_roots": {
+    "deploy": "/data/ta2/software/deploy",
+    "convert": "/data/ta2/software/convert/rosbag_to_dataset_TA2",
+    "deployment_recipe": "/data/ta2/model_exports/grasp_v3_eval/step20000_deployment"
+  },
+  "source_git": {
+    "server": {},
+    "client": {},
+    "convert": {},
+    "lerobot": {}
+  },
+  "files": {
+    "convert/rosbag_to_dataset_TA2/.gitmodules": {
+      "bytes": 130,
+      "sha256": "03d7e0c14ae76e0ebf79b45707adf3147bdb5c22a4f95f92f531342be0d4077a"
+    },
+    "convert/rosbag_to_dataset_TA2/LICENSE": {
+      "bytes": 1417,
+      "sha256": "f18cc15506b1554686c603a5f10f114ff3381472aff9bbe68d6b9b5d8a794bf6"
+    },
+    "convert/rosbag_to_dataset_TA2/README.md": {
+      "bytes": 22603,
+      "sha256": "94ed11eb6f37e0d8fdfa17c4a1976ad523e72436ed6a7987ee825d7e44055103"
+    },
+    "convert/rosbag_to_dataset_TA2/README_docker.md": {
+      "bytes": 11454,
+      "sha256": "39ad9e96a8ab894db099983618eb5d8530f270473d0cd424ccbd4795cb39b7d2"
+    },
+    "convert/rosbag_to_dataset_TA2/environment.yml": {
+      "bytes": 35565,
+      "sha256": "7452e4fbf97089ebbe6ffb13e36aa3f6b25e64ecb5bd0e39b9651cc1bbf34141"
+    },
+    "convert/rosbag_to_dataset_TA2/scripts/confirm_and_delete_episodes.py": {
+      "bytes": 9141,
+      "sha256": "6f742a91ed10a8bb6382e3f77dc3404ec8474d71426cbe304aad6eb7031f3e1e"
+    },
+    "convert/rosbag_to_dataset_TA2/scripts/convert_rosbag_to_hdf5.py": {
+      "bytes": 64468,
+      "sha256": "0a8b56ac9e78d82f136e270126aa2c0fb2da125067a85db5551266ecbe6ba0b3"
+    },
+    "convert/rosbag_to_dataset_TA2/scripts/convert_rosbag_to_lerobot.py": {
+      "bytes": 93971,
+      "sha256": "3da2349f72a18d3ecb5b9440f92aaf2aa67d792315447d5c4d106c64af8f678c"
+    },
+    "convert/rosbag_to_dataset_TA2/scripts/convert_rosbag_to_rlds.py": {
+      "bytes": 58260,
+      "sha256": "d3aa5d61026bc72268d29ee0627074908f40c676231b7e3e94d90e77d492988b"
+    },
+    "convert/rosbag_to_dataset_TA2/scripts/delete_wrong_episodes.py": {
+      "bytes": 15394,
+      "sha256": "a0f15b98202db42a01b1219c0817eb3feaaa1b53bff19567f23defd7a3af17cc"
+    },
+    "convert/rosbag_to_dataset_TA2/scripts/detect_suspicious_episodes.py": {
+      "bytes": 16337,
+      "sha256": "521854724ad3ce03007e69e6a83972f409401fd55fd0e68e2a861dc1ef82e1f1"
+    },
+    "convert/rosbag_to_dataset_TA2/scripts/merge_datasets.py": {
+      "bytes": 16722,
+      "sha256": "70b2f6c2145553dcc42d8e4371fe07f33e6d81f44b5f55908b0ccc6b9c0ba731"
+    },
+    "convert/rosbag_to_dataset_TA2/scripts/rosbag_video_extraction.py": {
+      "bytes": 10805,
+      "sha256": "87927ec7c0b11b1082f315533071eb3794b1a2715ae257a68b90d2c1bbbfee4b"
+    },
+    "convert/rosbag_to_dataset_TA2/scripts/split_train_test.py": {
+      "bytes": 12957,
+      "sha256": "ce346a69ff843a2779be6f7333a407fcb300111ae4000e31b36e9a41e3e35b97"
+    },
+    "convert/rosbag_to_dataset_TA2/scripts/unify_dataset_tasks.py": {
+      "bytes": 5648,
+      "sha256": "a0600e1c13eb42ee05fb98a36b92cb3d07d3ab47763d3a5d5c8178c8534218e7"
+    },
+    "convert/rosbag_to_dataset_TA2/scripts/validate_rosbags.py": {
+      "bytes": 14777,
+      "sha256": "f183ff502b4678e638b36744ded98490e578deface611af3d29f03b9743ea7e8"
+    },
+    "deploy/client/Dockerfile": {
+      "bytes": 16036,
+      "sha256": "e831ac5e8c9d3bd682a1ba9d631b9fa0af3ace8398067fbb1840451616d39f1b"
+    },
+    "deploy/client/README.md": {
+      "bytes": 6566,
+      "sha256": "6267c5ca9f9f31f29721bc66258a3a9bf0911d81e6b213d2aa627afef1f40755"
+    },
+    "deploy/client/SHA256SUMS": {
+      "bytes": 3086,
+      "sha256": "1c0acb948091daf3798557902695aba47ff0d7ed48dbede20585d003676389a8"
+    },
+    "deploy/client/VERSION": {
+      "bytes": 7,
+      "sha256": "fb31663e843d506f2c2bb375bb125b8e99e8692482d903e7fdcf5aad1f5f72b2"
+    },
+    "deploy/client/build.sh": {
+      "bytes": 2742,
+      "sha256": "d5a8719eb4bd204e4dc5b2caff1075b9a30a6b8f15c6b030bacc3d50aefb5e02"
+    },
+    "deploy/client/entrypoint.sh": {
+      "bytes": 616,
+      "sha256": "2339913ba5a515813d1807b373acb46fc00056cc36ebeeb46804b79c3d3ffab8"
+    },
+    "deploy/client/gpu_minfreq.sh": {
+      "bytes": 6979,
+      "sha256": "22e4c43737e0afb9d3bc63c02a60d57047ca98bc99f4fdbdd0bc0f2afdc6de25"
+    },
+    "deploy/client/lock.sh": {
+      "bytes": 1208,
+      "sha256": "c7d87829e67df61b2edec1c0e1dbe81db276bc60273a5ece19dbfd4b40a03437"
+    },
+    "deploy/client/openpi/.dockerignore": {
+      "bytes": 23,
+      "sha256": "e23eb8cbfb8fb15bf838725cfbad4bf098960edf829b9bce778f8ef835e6fff4"
+    },
+    "deploy/client/openpi/.gitignore": {
+      "bytes": 3277,
+      "sha256": "09f301a714e1150c7d2223bf265e0573cbac697864f76d2c33e541b730e46353"
+    },
+    "deploy/client/openpi/.gitmodules": {
+      "bytes": 237,
+      "sha256": "a66abbc75450e842eda0aa31050b3e9c911c2ed9a90713e496d2b69bdb42faf1"
+    },
+    "deploy/client/openpi/.pre-commit-config.yaml": {
+      "bytes": 336,
+      "sha256": "5cb58628e068c3a25facd810095cb0e8f80ae7558d0a67ba197c01d9513baec5"
+    },
+    "deploy/client/openpi/.python-version": {
+      "bytes": 4,
+      "sha256": "bb0635f951bfd55419a47fc08a859192049b4d0949cf2d09a4d4d6b2cafafb94"
+    },
+    "deploy/client/openpi/CONTRIBUTING.md": {
+      "bytes": 3364,
+      "sha256": "8da333112457fd84815551065bd3a3f80160054bbe89cc5794f57bfba2d50a89"
+    },
+    "deploy/client/openpi/LICENSE": {
+      "bytes": 11356,
+      "sha256": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1"
+    },
+    "deploy/client/openpi/README.md": {
+      "bytes": 18262,
+      "sha256": "490effb31cdd85d7e6a8b5c934e39992480077192d34c6918f46bdc7cfa51cc7"
+    },
+    "deploy/client/openpi/README_openpi.md": {
+      "bytes": 23375,
+      "sha256": "48d6f4a02ee46c18358123a79f140198f4921662fc6bbed0d30b302941f44ab2"
+    },
+    "deploy/client/openpi/arm_config.yml": {
+      "bytes": 1255,
+      "sha256": "447d0b909ad22057bef9ca7edcc9512c26195041723a33d358ba1d427a0945ce"
+    },
+    "deploy/client/openpi/environment.yml": {
+      "bytes": 34696,
+      "sha256": "897822b4429681d19b85cd14e050db80c3c5270248a15f5fe37ffb0b91fa9fea"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/README.md": {
+      "bytes": 24966,
+      "sha256": "db8fd2dc10145c7ebeb863c34d18df401493abf2a7a0cd1a9cc5ca0d1db0bc65"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/chassis_test.py": {
+      "bytes": 27931,
+      "sha256": "748c561534e98dd825d273533194121c9a5c97ced777f2ad7c74761bc67143fb"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/decode_stats.py": {
+      "bytes": 4739,
+      "sha256": "667ab94c682c627660a74fa33e38415865f8298776209adcc184cb129cd0aa65"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/decode_stats_test.py": {
+      "bytes": 4445,
+      "sha256": "b7594825c255c3cdcf79a6f7ee63c7ea6ea9c4b1a5ef34f18eaad35cb8fca8e1"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/env.py": {
+      "bytes": 16727,
+      "sha256": "1da76d9fe207423a76b8769a00ab4e8bc43da4d2afe8d279af96bade8315088c"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/env_test.py": {
+      "bytes": 4935,
+      "sha256": "ca53dffe198cba5a74f1b06476679069a0d98fefb21a637cfca7f65499dadc62"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/fake_env_rtc.py": {
+      "bytes": 13343,
+      "sha256": "11682823f642b79da9c2e4e8c25cc912e77a2ac004bb7e6c0f87e0e5cc074bfa"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/fake_env_rtc_test.py": {
+      "bytes": 10288,
+      "sha256": "dad2a8de6c383836dad1f6359e3671a9f09584087ea8577b8f3633e29e54e81a"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/main.py": {
+      "bytes": 14267,
+      "sha256": "cf34c51e5663ca5e74caad8178976773bfd25f2ecff34c35d84c3faf4949e44f"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/replay_episode.py": {
+      "bytes": 10067,
+      "sha256": "a41f554787c566c6f0cdd8518dc5d71601466c59ab46abe4a030063f43a161ae"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/ros2_interface.py": {
+      "bytes": 31726,
+      "sha256": "00049f8e911b9670eeef7b87af3e99d914ec942936da1939cac8fccd24f9912c"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_pipeline.py": {
+      "bytes": 7598,
+      "sha256": "0e27cbd5cf399d1c0cc3634533e917e508e90d55c0b60941804c62b4c1ea528b"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_pipeline_test.py": {
+      "bytes": 23949,
+      "sha256": "5bc56305cca17900e8761a83c96929d7dc6521916118915063a46789f3afd23e"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/compare_decoders.py": {
+      "bytes": 12393,
+      "sha256": "8f5fcd5f8d95549c7a48c2c9f97afb0da739faa5534d90e65f8de89b953d8a6a"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/frame_compare.py": {
+      "bytes": 7603,
+      "sha256": "e892f78d1ba372aa58c61cffcd4d510baa71afb224012fb8ccadb2a80a742ee5"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/frame_compare_test.py": {
+      "bytes": 5211,
+      "sha256": "cb32283e850de09891c9443538937a5619d99304af0997348592f6733e41f4cc"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/h265_rtp.py": {
+      "bytes": 34833,
+      "sha256": "8b66116b26244b1c287a12bf63d594330b7a8edb51c4c253390f54ff6cfa7564"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/h265_rtp_test.py": {
+      "bytes": 24658,
+      "sha256": "42a31fda1117529ae44db853c6960aeccaf1072da976dfb20ac05225afb6869a"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/make_synthetic.sh": {
+      "bytes": 9393,
+      "sha256": "3a2e534c29b6303e802ef8323ac3d84f033704c080a1916c41b1a656aa6ca315"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/rtp_capture.py": {
+      "bytes": 16404,
+      "sha256": "4d040afe1e418b9949f16ca69a8d6066f264c0cc56186ac2ecab58eddf73003c"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/rtp_capture_test.py": {
+      "bytes": 6881,
+      "sha256": "35588c9b51f8cfdf0b35fe9b47eb6b4cb41ecb297bd4f618bff867aeef6179c5"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/rtp_replay.py": {
+      "bytes": 10872,
+      "sha256": "3e539ca48c276c790430f98fa12ff7bd1ab9945347e236b66ca9babe8107a352"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/rtp_replay_test.py": {
+      "bytes": 7266,
+      "sha256": "76175fddfd707417de4ac830259cc23a60c0b91adf72b123bfd7b752c5e4e90d"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/rtpcap.py": {
+      "bytes": 9418,
+      "sha256": "77f3afa8350e901131d4e65ae52ad3192b6e60b1bc8e75286e52b34a9bbe2a7c"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/rtpcap_test.py": {
+      "bytes": 5515,
+      "sha256": "e3ccbe49cdce9da9bab5ddafcdd3c512a5d185376765b8b0886088a36f341c09"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/stream_info.py": {
+      "bytes": 24310,
+      "sha256": "56640f9d129be37dddfbb0606bdb8cce4dc456c51607d0afe60060693eb31b28"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_tools/stream_info_test.py": {
+      "bytes": 13343,
+      "sha256": "bb658951d6727726003c9c4dbb6c6435f65afa726ada1a36247608b48026e520"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/rtp_video_interface.py": {
+      "bytes": 29288,
+      "sha256": "e36e7aa7d387bc5fe6c0ba7aee4f350af1240d899f6b321c8328fbdaded33297"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/test.py": {
+      "bytes": 12374,
+      "sha256": "acda270f6b3d18ea0e508c5bfd5d768b971615e0103f98a01bf3ff60efa8d2d4"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/va_frame.py": {
+      "bytes": 13770,
+      "sha256": "c17bb236f407b3f3f79bc83f5eb97c964a0d771118ff1161da4e0b9d1690c07b"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/va_frame_test.py": {
+      "bytes": 9676,
+      "sha256": "74469e8447974e6d08b7bf72f641bb084b2714938f22ce47c93fa9644fec6800"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/zero.py": {
+      "bytes": 7867,
+      "sha256": "d865dc00e6c8424395ffb717c7b1b766dacd62ed0fc542a218cb51157cfe742e"
+    },
+    "deploy/client/openpi/examples/teleavatar_v2/zero_from_episode.py": {
+      "bytes": 7967,
+      "sha256": "411b0519f05883fc2d303e16ba87b0d935ea3d2eda40e1cbd3bd427a227a7387"
+    },
+    "deploy/client/openpi/packages/openpi-client/pyproject.toml": {
+      "bytes": 410,
+      "sha256": "00e8cb0e589d8f473588528f271f780fbe20cb67ba778e3e827d30cc3eb6cc92"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/__init__.py": {
+      "bytes": 22,
+      "sha256": "91447944015cec709e8aa7655f7e9d64e1e4508e7023a57fe3746911c0fc6fed"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/action_chunk_broker.py": {
+      "bytes": 1404,
+      "sha256": "019b9d69cb26cc681331a2f95dbe60a2cc7b02d6d309c5d15b6457ab39798234"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/base_policy.py": {
+      "bytes": 271,
+      "sha256": "88e98e0f06293f3c4767db675061664c4bba12f87242ba1e64377d1b8de8069e"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/image_tools.py": {
+      "bytes": 2656,
+      "sha256": "13d62bc22707574bfca80818ea6539aba623e9402430f98be5003523c3520a9f"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/image_tools_test.py": {
+      "bytes": 2155,
+      "sha256": "6444b1014f3e03402bb38d7d47e703c4edae843cbccba326fd48d2b34c66da80"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/msgpack_numpy.py": {
+      "bytes": 1944,
+      "sha256": "c04568948fcee52b691e3be4b6cffb759f7e79ad67530fcd5d23095a0d13c057"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/msgpack_numpy_test.py": {
+      "bytes": 1643,
+      "sha256": "2c6dd236720dae716d7bdf842b7d506a165e9563bf9d4376c95289269adcb973"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/rtc.py": {
+      "bytes": 13464,
+      "sha256": "ef871f191998e6bd71d3a6c009f26b36064d161e6fe9059138e1bf4e7200e7fb"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/rtc_test.py": {
+      "bytes": 7185,
+      "sha256": "3f25495ed778928cf129c7ac7de216af0cd03e17401cc3a493917073806e7e65"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/runtime/agent.py": {
+      "bytes": 465,
+      "sha256": "b559885afd9645a91b9b6ee12a28513295474f987d11b16610fc0479dbe6de5b"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/runtime/agents/policy_agent.py": {
+      "bytes": 509,
+      "sha256": "c4d63952d1954bd4b72a3122223df36794812fea74cf1c7023433b5a90473c1c"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/runtime/environment.py": {
+      "bytes": 1044,
+      "sha256": "1c12e5054b3401dec5f1f8b71eef0f625cb60e2b50784dcf19afa32c77107a7e"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/runtime/runtime.py": {
+      "bytes": 3362,
+      "sha256": "5957ff4c3dc7759a409c416c885cf4a83105b568272b1df72c204c15d314bb7e"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/runtime/runtime_test.py": {
+      "bytes": 3902,
+      "sha256": "ede0493cef4a39ad3e66e5189adca3ee948649204c9f724de17ae84418c8526b"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/runtime/subscriber.py": {
+      "bytes": 500,
+      "sha256": "d269a2af8ec4056beb310e5c3c97d4468af01549c7ef80dd905652d8ac64f85b"
+    },
+    "deploy/client/openpi/packages/openpi-client/src/openpi_client/websocket_client_policy.py": {
+      "bytes": 2050,
+      "sha256": "f96009f787d6ccdebde077cc4f11829b89fcce677532af44b3d206a93d53d5b4"
+    },
+    "deploy/client/openpi/pyproject.toml": {
+      "bytes": 2984,
+      "sha256": "8feff9b952ee3aa4b52af67a0ae4575530baad2bc93c3de3a32df05d3b437d00"
+    },
+    "deploy/client/openpi/uv.lock": {
+      "bytes": 708768,
+      "sha256": "5e3a9a0a12d9a6048afea5591f4520c98585499cbd4a8343dcabfe2aaed94e3d"
+    },
+    "deploy/client/requirements.in": {
+      "bytes": 799,
+      "sha256": "3abacfb704c53bafa505ab332962a3b08dbfc4e7529fa4f1a3c476d159a8caa3"
+    },
+    "deploy/client/requirements.lock": {
+      "bytes": 50187,
+      "sha256": "24da06874820f127d6953c892966b4fae6c1a22c9dbcdc50dfc234204d1a5b35"
+    },
+    "deploy/client/run_client.sh": {
+      "bytes": 13038,
+      "sha256": "12bf42e6fc530ba7a2412b0a57750aad149ef1badce15a230c48b89522475658"
+    },
+    "deploy/client/tunnel_a.sh": {
+      "bytes": 1849,
+      "sha256": "c7bf2c0bd33c7e35acc12f2f0a9731a32cb88e811a149ebaf828f4085a386e2b"
+    },
+    "deploy/client/tunnel_b.sh": {
+      "bytes": 1199,
+      "sha256": "56215ba199db933e276d1e42bacc25260c96a65c4958ec5487d6dd8c223af881"
+    },
+    "deploy/client/va_vpp/vapp.c": {
+      "bytes": 14510,
+      "sha256": "37ab560d4f7e828ffb70aa70f21d12a036a9e54fe6bd81af4d46c560d55e58c9"
+    },
+    "deploy/client/zenoh-bridge-client.json5": {
+      "bytes": 875,
+      "sha256": "827001841c615aabf25d01746c0526909513cb5da0f8b5bb9991b58eb67c6637"
+    },
+    "deploy/client/zenoh-bridge/Dockerfile.v0.2.1": {
+      "bytes": 1320,
+      "sha256": "008572d5fd996c290593d526cb69d66ef7b1f568f048d68f8e85f509b4759584"
+    },
+    "deploy/client/zenoh-bridge/README.md": {
+      "bytes": 4850,
+      "sha256": "81b74085c440a0d60f400c0c30febe1fd1599a92ca3b472a15a7d39004d4d2f3"
+    },
+    "deploy/client/zenoh-bridge/build_bridge.sh": {
+      "bytes": 4675,
+      "sha256": "8d64ac3851d8be52cf74ecc70e23344cbc888ceb24686b90e61afc53f83f2614"
+    },
+    "deploy/client/zenoh-bridge/build_image.sh": {
+      "bytes": 1432,
+      "sha256": "dfddd7313f1493f7fa36335b29e3574deaad360494da8c664ec77a9f5aaf43b6"
+    },
+    "deploy/client/zenoh-bridge/patch_route_lifecycle.py": {
+      "bytes": 8544,
+      "sha256": "c9294048e1898dca5f0114b3aa62a318eed9c693d7f5154285e2ba8c5ef24519"
+    },
+    "deploy/client/zenoh-bridge/route-lifecycle-p1.patch": {
+      "bytes": 7134,
+      "sha256": "fd2e037d7fcf5d2515476b460bb362a4941939edc2a19f6736aebf51c2a80063"
+    },
+    "deploy/server/openpi-xpu-env/.dockerignore": {
+      "bytes": 196,
+      "sha256": "4e3ae9629b4c5d9e6e38ac130dab73d479fa733bec3bbfdd75e63fda854b7491"
+    },
+    "deploy/server/openpi-xpu-env/.gitignore": {
+      "bytes": 323,
+      "sha256": "960fe47fb6ecd3e4e44ad91a605ff37eba09030793730cdb40ec3f2c5c11a95d"
+    },
+    "deploy/server/openpi-xpu-env/Dockerfile": {
+      "bytes": 13601,
+      "sha256": "c286b066bbb3809da8a91381db91e01521e7c487386c6774ad99accba269fed8"
+    },
+    "deploy/server/openpi-xpu-env/README.md": {
+      "bytes": 12381,
+      "sha256": "bc4c416e948034f6737112de661916786a78e30cc04b0bc8cfabc912582cffc6"
+    },
+    "deploy/server/openpi-xpu-env/TEMPLATE_ORIGIN.txt": {
+      "bytes": 332,
+      "sha256": "5a32c0d311c1b3a15af97da0663c1bedf2ca416481580e35c51a34b22cfc0772"
+    },
+    "deploy/server/openpi-xpu-env/VERSION": {
+      "bytes": 7,
+      "sha256": "d0b4f9120ba026c00fa23cb84b4e1620a2e6436592e58155a5151653179572c0"
+    },
+    "deploy/server/openpi-xpu-env/deps/.python-version": {
+      "bytes": 4,
+      "sha256": "bb0635f951bfd55419a47fc08a859192049b4d0949cf2d09a4d4d6b2cafafb94"
+    },
+    "deploy/server/openpi-xpu-env/deps/NOTE.md": {
+      "bytes": 1621,
+      "sha256": "19fb6c10857ae759eda2f6e3dbb1209a5a434ed6cf5361be609956c6350f6ae6"
+    },
+    "deploy/server/openpi-xpu-env/deps/OPENPI_COMMIT": {
+      "bytes": 41,
+      "sha256": "ae9663b758bf8196bae0be95cbbc1a988f9de0ad2d4dfbf69aa80ef37bcb7779"
+    },
+    "deploy/server/openpi-xpu-env/deps/packages/openpi-client/pyproject.toml": {
+      "bytes": 410,
+      "sha256": "00e8cb0e589d8f473588528f271f780fbe20cb67ba778e3e827d30cc3eb6cc92"
+    },
+    "deploy/server/openpi-xpu-env/deps/pyproject.toml": {
+      "bytes": 4944,
+      "sha256": "fdb0fa54490fa2ae3ee5acd71a4b5e8cb0094ae4bcf6acc5ac0222cf136dbc1a"
+    },
+    "deploy/server/openpi-xpu-env/deps/umd-ppa/SHA256SUMS": {
+      "bytes": 1112,
+      "sha256": "0d8937ed73d4caf6d84a580375dafa5c5a9402c1f3058017a65e9ab4be8788a5"
+    },
+    "deploy/server/openpi-xpu-env/deps/uv.lock": {
+      "bytes": 857200,
+      "sha256": "747b80f75d41c9fcfc546da9fa610468aa9132bb806ff5fd24ecffe84bb844da"
+    },
+    "deploy/server/openpi-xpu-env/docker-compose.yml": {
+      "bytes": 992,
+      "sha256": "e7fc848d92d0f8f45e8ce251803984b6609fa71cde545b2d5d89a71454e9758a"
+    },
+    "deploy/server/openpi-xpu-env/docker/entrypoint.sh": {
+      "bytes": 3170,
+      "sha256": "0fff3bbe996087aabddbcf99b00cbdcfb79e89b9bd3cf4255b383ae1d9221c41"
+    },
+    "deploy/server/openpi-xpu-env/scripts/build.sh": {
+      "bytes": 2152,
+      "sha256": "cc5e07fce11dda718509cf8bd40f83c4845410010a3a2074516e27bd410e5ed9"
+    },
+    "deploy/server/openpi-xpu-env/scripts/export.sh": {
+      "bytes": 2409,
+      "sha256": "a62965ce550e29daf0d10a355c5d186444e34f4d8587bd138aac171a80824226"
+    },
+    "deploy/server/openpi-xpu-env/scripts/run.sh": {
+      "bytes": 8642,
+      "sha256": "e9f46caf4b3f2278f4567b45ffe4404bf8f6a237a3c9e51a229d2bcff4412c63"
+    },
+    "deploy/server/openpi-xpu-env/scripts/sync_deps.sh": {
+      "bytes": 7413,
+      "sha256": "d62e27e9ef145ea7babac49cf628d71e64e4c8498601d46ae5b1cf01c64d406d"
+    },
+    "deploy/server/openpi-xpu-env/smoke/setup_compiler.sh": {
+      "bytes": 1892,
+      "sha256": "e59321e713eb966772f9c4124c491a19e53965d0c0f942895c9b6e3f7e056371"
+    },
+    "deploy/server/openpi-xpu-env/smoke/setup_torch.sh": {
+      "bytes": 1741,
+      "sha256": "428dd691bf80ad7d8bb7312d66ffc28926b16a1e3285dd1956d2197f37ee987c"
+    },
+    "deploy/server/openpi-xpu-env/smoke/setup_umd.sh": {
+      "bytes": 3453,
+      "sha256": "e9e050bb77ebdfac719274ed0f5982b46e2f57bd7906dee88c648bf16e48d00a"
+    },
+    "deploy/server/openpi-xpu-env/smoke/smoke.py": {
+      "bytes": 8641,
+      "sha256": "618dc21509ca4ef2c19eaef52b78dcbce0260fc65d1ccf2be2186f111b161bfe"
+    },
+    "deploy/server/openpi-xpu-env/smoke/verify_deps.py": {
+      "bytes": 1436,
+      "sha256": "06a4948bc2507bdaebd38322dd74f97120fa841207a345af3ed88a4960ae8ba9"
+    },
+    "deploy/server/openpi/.dockerignore": {
+      "bytes": 23,
+      "sha256": "e23eb8cbfb8fb15bf838725cfbad4bf098960edf829b9bce778f8ef835e6fff4"
+    },
+    "deploy/server/openpi/.gitignore": {
+      "bytes": 3277,
+      "sha256": "09f301a714e1150c7d2223bf265e0573cbac697864f76d2c33e541b730e46353"
+    },
+    "deploy/server/openpi/.gitmodules": {
+      "bytes": 237,
+      "sha256": "a66abbc75450e842eda0aa31050b3e9c911c2ed9a90713e496d2b69bdb42faf1"
+    },
+    "deploy/server/openpi/.pre-commit-config.yaml": {
+      "bytes": 336,
+      "sha256": "5cb58628e068c3a25facd810095cb0e8f80ae7558d0a67ba197c01d9513baec5"
+    },
+    "deploy/server/openpi/.python-version": {
+      "bytes": 4,
+      "sha256": "bb0635f951bfd55419a47fc08a859192049b4d0949cf2d09a4d4d6b2cafafb94"
+    },
+    "deploy/server/openpi/CONTRIBUTING.md": {
+      "bytes": 3364,
+      "sha256": "8da333112457fd84815551065bd3a3f80160054bbe89cc5794f57bfba2d50a89"
+    },
+    "deploy/server/openpi/LICENSE": {
+      "bytes": 11356,
+      "sha256": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1"
+    },
+    "deploy/server/openpi/README.md": {
+      "bytes": 17182,
+      "sha256": "37ced1db4094a0b5cb914422aacc44f743bce50776b7c4a85c29e743668d9797"
+    },
+    "deploy/server/openpi/README_openpi.md": {
+      "bytes": 23375,
+      "sha256": "48d6f4a02ee46c18358123a79f140198f4921662fc6bbed0d30b302941f44ab2"
+    },
+    "deploy/server/openpi/arm_config.yml": {
+      "bytes": 1255,
+      "sha256": "447d0b909ad22057bef9ca7edcc9512c26195041723a33d358ba1d427a0945ce"
+    },
+    "deploy/server/openpi/docs/docker.md": {
+      "bytes": 1989,
+      "sha256": "5f6180bf09f1eed5c3705cf7e08536b7fd5d4f75b3ba0d938b932eff73ce4053"
+    },
+    "deploy/server/openpi/docs/norm_stats.md": {
+      "bytes": 5245,
+      "sha256": "62e4a39ea7fcdae53b4466942db348c3e38fc016b7f7a5273cafed649ebe614b"
+    },
+    "deploy/server/openpi/docs/real_time_chunking.md": {
+      "bytes": 11358,
+      "sha256": "d1acfe752e278d42353aeb654542d99fea413225a8b5ba3f78b211857f88f9a2"
+    },
+    "deploy/server/openpi/docs/remote_inference.md": {
+      "bytes": 3598,
+      "sha256": "766f3f77cfb3bd79916a7307db344cc996dab0918845a6ef38bdb486184c14a0"
+    },
+    "deploy/server/openpi/docs/xpu.md": {
+      "bytes": 13614,
+      "sha256": "3335bf42e4e2897ef92fb40f836cc15ee717a7e986606eca2ac2bb6ba20c7eeb"
+    },
+    "deploy/server/openpi/environment.yml": {
+      "bytes": 34696,
+      "sha256": "897822b4429681d19b85cd14e050db80c3c5270248a15f5fe37ffb0b91fa9fea"
+    },
+    "deploy/server/openpi/examples/convert_jax_model_to_pytorch.py": {
+      "bytes": 7470,
+      "sha256": "1e715f70cf4c9dc5372c4920e7559a9d5008d1dcb1250f3d9e022cec8bb74940"
+    },
+    "deploy/server/openpi/examples/teleavatar_v2/README.md": {
+      "bytes": 13792,
+      "sha256": "8dcc2bb9d9b846f2ac3696db991280e855e1c7975f2d252effe8a94547262610"
+    },
+    "deploy/server/openpi/examples/teleavatar_v2/env.py": {
+      "bytes": 8350,
+      "sha256": "b533a22d3e7d3694644d93e93372723b0e51e50381c7e8c7cb0f6c939713c49c"
+    },
+    "deploy/server/openpi/examples/teleavatar_v2/fake_env_rtc.py": {
+      "bytes": 13343,
+      "sha256": "11682823f642b79da9c2e4e8c25cc912e77a2ac004bb7e6c0f87e0e5cc074bfa"
+    },
+    "deploy/server/openpi/examples/teleavatar_v2/fake_env_rtc_test.py": {
+      "bytes": 10288,
+      "sha256": "dad2a8de6c383836dad1f6359e3671a9f09584087ea8577b8f3633e29e54e81a"
+    },
+    "deploy/server/openpi/examples/teleavatar_v2/main.py": {
+      "bytes": 6184,
+      "sha256": "69d0e0792c1ee9c16b975160d33e0faf5b744b80dd83bef0362a3738eb1401c3"
+    },
+    "deploy/server/openpi/examples/teleavatar_v2/replay_episode.py": {
+      "bytes": 10067,
+      "sha256": "a41f554787c566c6f0cdd8518dc5d71601466c59ab46abe4a030063f43a161ae"
+    },
+    "deploy/server/openpi/examples/teleavatar_v2/ros2_interface.py": {
+      "bytes": 19116,
+      "sha256": "a5a7b98608f4675f02e265b3a19d3f289384676714e9ef903a04146aae406941"
+    },
+    "deploy/server/openpi/examples/teleavatar_v2/rtp_video_interface.py": {
+      "bytes": 15809,
+      "sha256": "fd448feb140bb90db6df749054bafa42aab9b95e8ff3752e5d64789e95f245f7"
+    },
+    "deploy/server/openpi/examples/teleavatar_v2/test.py": {
+      "bytes": 6112,
+      "sha256": "19634770516d2c4a51ae8c64cd8ad516af93e50fcc412db4e5cdbcfd7f5c8ae6"
+    },
+    "deploy/server/openpi/examples/teleavatar_v2/zero.py": {
+      "bytes": 7867,
+      "sha256": "d865dc00e6c8424395ffb717c7b1b766dacd62ed0fc542a218cb51157cfe742e"
+    },
+    "deploy/server/openpi/examples/teleavatar_v2/zero_from_episode.py": {
+      "bytes": 7967,
+      "sha256": "411b0519f05883fc2d303e16ba87b0d935ea3d2eda40e1cbd3bd427a227a7387"
+    },
+    "deploy/server/openpi/packages/openpi-client/pyproject.toml": {
+      "bytes": 410,
+      "sha256": "00e8cb0e589d8f473588528f271f780fbe20cb67ba778e3e827d30cc3eb6cc92"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/__init__.py": {
+      "bytes": 22,
+      "sha256": "91447944015cec709e8aa7655f7e9d64e1e4508e7023a57fe3746911c0fc6fed"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/action_chunk_broker.py": {
+      "bytes": 1404,
+      "sha256": "019b9d69cb26cc681331a2f95dbe60a2cc7b02d6d309c5d15b6457ab39798234"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/base_policy.py": {
+      "bytes": 271,
+      "sha256": "88e98e0f06293f3c4767db675061664c4bba12f87242ba1e64377d1b8de8069e"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/image_tools.py": {
+      "bytes": 2656,
+      "sha256": "13d62bc22707574bfca80818ea6539aba623e9402430f98be5003523c3520a9f"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/image_tools_test.py": {
+      "bytes": 2155,
+      "sha256": "6444b1014f3e03402bb38d7d47e703c4edae843cbccba326fd48d2b34c66da80"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/msgpack_numpy.py": {
+      "bytes": 1944,
+      "sha256": "c04568948fcee52b691e3be4b6cffb759f7e79ad67530fcd5d23095a0d13c057"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/msgpack_numpy_test.py": {
+      "bytes": 1643,
+      "sha256": "2c6dd236720dae716d7bdf842b7d506a165e9563bf9d4376c95289269adcb973"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/rtc.py": {
+      "bytes": 13464,
+      "sha256": "ef871f191998e6bd71d3a6c009f26b36064d161e6fe9059138e1bf4e7200e7fb"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/rtc_test.py": {
+      "bytes": 7185,
+      "sha256": "3f25495ed778928cf129c7ac7de216af0cd03e17401cc3a493917073806e7e65"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/runtime/agent.py": {
+      "bytes": 465,
+      "sha256": "b559885afd9645a91b9b6ee12a28513295474f987d11b16610fc0479dbe6de5b"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/runtime/agents/policy_agent.py": {
+      "bytes": 509,
+      "sha256": "c4d63952d1954bd4b72a3122223df36794812fea74cf1c7023433b5a90473c1c"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/runtime/environment.py": {
+      "bytes": 1044,
+      "sha256": "1c12e5054b3401dec5f1f8b71eef0f625cb60e2b50784dcf19afa32c77107a7e"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/runtime/runtime.py": {
+      "bytes": 3049,
+      "sha256": "3daa242a9ce61ffb210789ef3ba6b1e3cade9de757fcd36af7b174c530345ea8"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/runtime/subscriber.py": {
+      "bytes": 500,
+      "sha256": "d269a2af8ec4056beb310e5c3c97d4468af01549c7ef80dd905652d8ac64f85b"
+    },
+    "deploy/server/openpi/packages/openpi-client/src/openpi_client/websocket_client_policy.py": {
+      "bytes": 2050,
+      "sha256": "f96009f787d6ccdebde077cc4f11829b89fcce677532af44b3d206a93d53d5b4"
+    },
+    "deploy/server/openpi/pyproject.toml": {
+      "bytes": 2984,
+      "sha256": "8feff9b952ee3aa4b52af67a0ae4575530baad2bc93c3de3a32df05d3b437d00"
+    },
+    "deploy/server/openpi/scripts/__init__.py": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "deploy/server/openpi/scripts/benchmark_serving.py": {
+      "bytes": 11173,
+      "sha256": "d1329161a3c6fc8d33a8e2a251f8e78b03555a1e9d6b650744f518695cb73684"
+    },
+    "deploy/server/openpi/scripts/benchmark_serving_test.py": {
+      "bytes": 2750,
+      "sha256": "5ca293d373771b62058fded998fa277bd963f36530f7ff9e434389ed74ef7093"
+    },
+    "deploy/server/openpi/scripts/compute_norm_stats.py": {
+      "bytes": 7575,
+      "sha256": "37d1bc63d7bcea721cc280420032b66e6a5ce3771a75371e342fb5ef22125813"
+    },
+    "deploy/server/openpi/scripts/docker/compose.yml": {
+      "bytes": 814,
+      "sha256": "43034f5049bfc4653cb6fbb99afc50a0478f333d158c37011102a7fbf465c550"
+    },
+    "deploy/server/openpi/scripts/docker/install_docker_ubuntu22.sh": {
+      "bytes": 1529,
+      "sha256": "1e143d1165e3cff184a5161d6c1b0c7634a507068167bde6aa7397c3926f7f38"
+    },
+    "deploy/server/openpi/scripts/docker/install_nvidia_container_toolkit.sh": {
+      "bytes": 985,
+      "sha256": "1443f531ceebc1980b75ec2968a8fcefb7bb4ef8a6a07e7adbd3d2fe5809dbf1"
+    },
+    "deploy/server/openpi/scripts/rtc_numerics.py": {
+      "bytes": 54384,
+      "sha256": "2d677b0af69474e60009be8aa521220a6c908a6cf2fea45e3b20cbfe4ed60d20"
+    },
+    "deploy/server/openpi/scripts/serve_policy.py": {
+      "bytes": 9187,
+      "sha256": "c15ea9b46eee7bfa48a0887738f381cfa8995dbc439480e6704f0b215fc36b7f"
+    },
+    "deploy/server/openpi/scripts/serve_policy_test.py": {
+      "bytes": 4158,
+      "sha256": "90cc56ab636a4f4f7f997a9c865f75275081337f9c5a455988e7cf5e0dce7d5b"
+    },
+    "deploy/server/openpi/scripts/train.py": {
+      "bytes": 10488,
+      "sha256": "22f98a06aaa6e68e0f725d727ab95398238d1cae8a46bb94e829f330758a9baf"
+    },
+    "deploy/server/openpi/scripts/train_pytorch.py": {
+      "bytes": 25938,
+      "sha256": "baa66f1642e955d5cc2ec3f54d9495035df61d71b028b98ab4ebb1e240548311"
+    },
+    "deploy/server/openpi/scripts/train_test.py": {
+      "bytes": 718,
+      "sha256": "48398805809df6a07ce613d9060ab7e4e64fab60d573f79d16a7ba59a48219f6"
+    },
+    "deploy/server/openpi/src/openpi/__init__.py": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "deploy/server/openpi/src/openpi/conftest.py": {
+      "bytes": 339,
+      "sha256": "626672e385fb276396c119e2220421065c58f8ec602401e8bf2ae509f9fffaf3"
+    },
+    "deploy/server/openpi/src/openpi/models/__init__.py": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "deploy/server/openpi/src/openpi/models/gemma.py": {
+      "bytes": 17594,
+      "sha256": "9d7ae1a9925cf1531e1e0b1d0f32b2bd3ccb1f6895f9b814a12f9ca7683dbd3b"
+    },
+    "deploy/server/openpi/src/openpi/models/gemma_fast.py": {
+      "bytes": 15643,
+      "sha256": "563c6e1ffd8afa31c406bcb8894a605e87df88f6c075d398d97a57af6bc3aefa"
+    },
+    "deploy/server/openpi/src/openpi/models/lora.py": {
+      "bytes": 5342,
+      "sha256": "ced28716950c34d84a1a6d0b03b1d9550000732721df884818080b6e78cb3289"
+    },
+    "deploy/server/openpi/src/openpi/models/lora_test.py": {
+      "bytes": 3138,
+      "sha256": "a0f10525de7773310402b3ffa636e88ffff7035f3179b140aacc6809c122f085"
+    },
+    "deploy/server/openpi/src/openpi/models/model.py": {
+      "bytes": 12270,
+      "sha256": "0d74bc1d8f4623ac3d8e543710b8bf75f9b95e588a3ebf6127c659e001385cff"
+    },
+    "deploy/server/openpi/src/openpi/models/model_test.py": {
+      "bytes": 2966,
+      "sha256": "f8e71f195045d4e3ef1ddfafb2337fa52e5aa2f89bce1fde62f5cbfb67121f21"
+    },
+    "deploy/server/openpi/src/openpi/models/pi0.py": {
+      "bytes": 18491,
+      "sha256": "d996eac6cf4ac1a4576d5c4187c34f5d21cd5adbd8f2ca7605ac145b9440b347"
+    },
+    "deploy/server/openpi/src/openpi/models/pi0_config.py": {
+      "bytes": 5051,
+      "sha256": "06fcabe3b2504839402e9b7d00e40d87704dd8c00b027fed64e208f2c07ec994"
+    },
+    "deploy/server/openpi/src/openpi/models/pi0_fast.py": {
+      "bytes": 13209,
+      "sha256": "627332a555046f2744ef144c45f8bd3361a9820cf68854a4528d0fdbba7e9aa3"
+    },
+    "deploy/server/openpi/src/openpi/models/pi0_test.py": {
+      "bytes": 1631,
+      "sha256": "5082873014a7fc45fb8414f517909e1c24cdafea980a1fb612e0aea6058ed0fe"
+    },
+    "deploy/server/openpi/src/openpi/models/rtc.py": {
+      "bytes": 3426,
+      "sha256": "efcc0734a1a6a654857402e5a2ddf69d51a5726746a9b0ffc91899e9443c0c84"
+    },
+    "deploy/server/openpi/src/openpi/models/rtc_test.py": {
+      "bytes": 8549,
+      "sha256": "4fdf77e38a8c119b2a8bfd08bed47e5957e1e4f07baf1ca9e9177d9263554297"
+    },
+    "deploy/server/openpi/src/openpi/models/siglip.py": {
+      "bytes": 12078,
+      "sha256": "14b4df0be280d5769fb0dc31a40cde27525dbb1980cc998c28475d62fa3cad32"
+    },
+    "deploy/server/openpi/src/openpi/models/tokenizer.py": {
+      "bytes": 17517,
+      "sha256": "965be8b3c393a6811875bbc32da9e01a5d01cc2f87802de801cf7293e049748c"
+    },
+    "deploy/server/openpi/src/openpi/models/tokenizer_test.py": {
+      "bytes": 807,
+      "sha256": "5abd179ce883420e39d4d18b33d0123290af752da243003aa48a3bc06dbb9517"
+    },
+    "deploy/server/openpi/src/openpi/models/utils/fsq_tokenizer.py": {
+      "bytes": 15928,
+      "sha256": "88866638ee4775f46a222561a957bd35e20600fe38c5888b587016ad77b1065f"
+    },
+    "deploy/server/openpi/src/openpi/models/vit.py": {
+      "bytes": 10266,
+      "sha256": "d285d057636c3cba2d1fd3b37693b18075ad4b9c3b47bbde807c34c6c376ac93"
+    },
+    "deploy/server/openpi/src/openpi/models_pytorch/gemma_pytorch.py": {
+      "bytes": 14424,
+      "sha256": "af4d3a8884e01596f84faf1c189595d0ae1c9b742fdc7ab58296b85fa8c83241"
+    },
+    "deploy/server/openpi/src/openpi/models_pytorch/gemma_pytorch_test.py": {
+      "bytes": 2378,
+      "sha256": "569721fca580e65114d482b1dcbb2fffb0e72918884c3042395b9ed9288351bd"
+    },
+    "deploy/server/openpi/src/openpi/models_pytorch/jax_conversion.py": {
+      "bytes": 23639,
+      "sha256": "782b30b730e37f7e9656bee62895b4b4adb4a2024700e675b10fd1a8d4c9f913"
+    },
+    "deploy/server/openpi/src/openpi/models_pytorch/pi0_pytorch.py": {
+      "bytes": 25077,
+      "sha256": "84ae0baf8ec974d0ed826aea0c2ed9e9b27b6b924b6c16ed4fc7eec088a90134"
+    },
+    "deploy/server/openpi/src/openpi/models_pytorch/preprocessing_pytorch.py": {
+      "bytes": 7264,
+      "sha256": "6a44e91be2d7a724c6140d2cc98ed0a631b8d38bbb29f63b380a0a19f903bbf6"
+    },
+    "deploy/server/openpi/src/openpi/models_pytorch/rtc_pytorch.py": {
+      "bytes": 2460,
+      "sha256": "20db9280a0be2306b23e39f476d0c3d2fe8c0ce205526ff78d716a67c5079a43"
+    },
+    "deploy/server/openpi/src/openpi/models_pytorch/rtc_pytorch_test.py": {
+      "bytes": 17452,
+      "sha256": "ffce51773b2cd321df447695d24c2cbaf54b14cda3ba5732db41b82b69f10316"
+    },
+    "deploy/server/openpi/src/openpi/models_pytorch/transformers_replace/models/gemma/configuration_gemma.py": {
+      "bytes": 8958,
+      "sha256": "26fd0d0f52730ab32b6f337eb73ae9a26cb71ae0915bc49eced1d0e2ed8d0ec6"
+    },
+    "deploy/server/openpi/src/openpi/models_pytorch/transformers_replace/models/gemma/modeling_gemma.py": {
+      "bytes": 36661,
+      "sha256": "e4c49ae9198d4ee82d5895be58686639e6bdcc6da05764b6994a2a8147cef01d"
+    },
+    "deploy/server/openpi/src/openpi/models_pytorch/transformers_replace/models/paligemma/modeling_paligemma.py": {
+      "bytes": 27688,
+      "sha256": "c945d330b829264f927f3ee5339f977238631772de07a28e855e265bb85fd53c"
+    },
+    "deploy/server/openpi/src/openpi/models_pytorch/transformers_replace/models/siglip/check.py": {
+      "bytes": 133,
+      "sha256": "466e8eb7887ac5ccc98118a3169298d6ab65a284d834bae74751e3854dbc4245"
+    },
+    "deploy/server/openpi/src/openpi/models_pytorch/transformers_replace/models/siglip/modeling_siglip.py": {
+      "bytes": 50231,
+      "sha256": "ef2e99500f263fdd78db9d4d9a255e29d844eb92f53c25ad640f8056700ef84b"
+    },
+    "deploy/server/openpi/src/openpi/policies/aloha_policy.py": {
+      "bytes": 7543,
+      "sha256": "50d7ad972d80142ecb0f03b0780dacfd3af212946f4c9aac31a204b02db4543d"
+    },
+    "deploy/server/openpi/src/openpi/policies/droid_policy.py": {
+      "bytes": 3186,
+      "sha256": "7d0893555964d485e231f70084125084a99495705ddd74b29461229d524fff26"
+    },
+    "deploy/server/openpi/src/openpi/policies/libero_policy.py": {
+      "bytes": 4320,
+      "sha256": "ad01e5be74516d9ec9aeb1f76294d5c9f7f7179a60f1f7fbbb35e7646534f81a"
+    },
+    "deploy/server/openpi/src/openpi/policies/policy.py": {
+      "bytes": 15056,
+      "sha256": "228e43a99b23e27ba916d8d28337b82b6dc6b2d1b4f6d1bdd244bc39cf630038"
+    },
+    "deploy/server/openpi/src/openpi/policies/policy_config.py": {
+      "bytes": 5002,
+      "sha256": "cd5cdad956413e3166fe3133ac321c32c4f96c3b179af179a273df62eb44b4ae"
+    },
+    "deploy/server/openpi/src/openpi/policies/policy_test.py": {
+      "bytes": 13111,
+      "sha256": "2248f6f56901c28c5def6e1f2b979a92d50a14063360f9ab8c3307f3f9d71a26"
+    },
+    "deploy/server/openpi/src/openpi/policies/teleavatar_v1_policy.py": {
+      "bytes": 11451,
+      "sha256": "6fde31b05e9d61b206d698091d5820e3f2bbe1d15aaa4ff381f1544a0f8a86da"
+    },
+    "deploy/server/openpi/src/openpi/policies/teleavatar_v2_policy.py": {
+      "bytes": 15506,
+      "sha256": "f4fe236517294301faede8e81a9b4a99fe40eeb426b33cafa6e479294cdbf4ba"
+    },
+    "deploy/server/openpi/src/openpi/policies/teleavatar_v2_policy_test.py": {
+      "bytes": 5877,
+      "sha256": "3ead325cd18417cd8259e513a99b559244b66d0da2b97597cb819106091d8727"
+    },
+    "deploy/server/openpi/src/openpi/serving/websocket_policy_server.py": {
+      "bytes": 3747,
+      "sha256": "021875f7426298782604207bead61cceca01847fd0560b9edb7d242782c9a736"
+    },
+    "deploy/server/openpi/src/openpi/serving/websocket_policy_server_test.py": {
+      "bytes": 2944,
+      "sha256": "9822673d02ff6a1fcb0c73ff7cec8ef4cf567f92266026e7fce7b05ada2d49ea"
+    },
+    "deploy/server/openpi/src/openpi/shared/__init__.py": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "deploy/server/openpi/src/openpi/shared/array_typing.py": {
+      "bytes": 3402,
+      "sha256": "6524945566eab3eb97b75a6280ba4724617b4d028c55f05172b283c3de68a026"
+    },
+    "deploy/server/openpi/src/openpi/shared/download.py": {
+      "bytes": 7817,
+      "sha256": "1fee4957a275ab632fd4dd98af240516a2a708da2db38a838132f05c04da425d"
+    },
+    "deploy/server/openpi/src/openpi/shared/download_test.py": {
+      "bytes": 1490,
+      "sha256": "234ee70ab2501a1421f6c44cbd83c1e16747597023319ae1446bed9d44f17072"
+    },
+    "deploy/server/openpi/src/openpi/shared/image_tools.py": {
+      "bytes": 4665,
+      "sha256": "0f8fcb355288119e56acb56d550c1cc1f3a9edddceb0dc5b319f955943ef7767"
+    },
+    "deploy/server/openpi/src/openpi/shared/image_tools_test.py": {
+      "bytes": 1418,
+      "sha256": "842374579dc9f4c2907da5e8bb555efe5a3f4902b659720c8e90115863dd59fe"
+    },
+    "deploy/server/openpi/src/openpi/shared/nnx_utils.py": {
+      "bytes": 2844,
+      "sha256": "4da7111ba3011c4d1c381c9ed17257771df6a50ed89182647c3fb6f79208005e"
+    },
+    "deploy/server/openpi/src/openpi/shared/normalize.py": {
+      "bytes": 5529,
+      "sha256": "6c2cea4946fb07e51801530400d2b2fd94730e195cd290d6b6960114eca9739d"
+    },
+    "deploy/server/openpi/src/openpi/shared/normalize_test.py": {
+      "bytes": 1521,
+      "sha256": "fda27a21cf37f337b12bcab71229407c2a349c5965c33f278bdc468ed03f58af"
+    },
+    "deploy/server/openpi/src/openpi/training/checkpoints.py": {
+      "bytes": 5763,
+      "sha256": "3cc32682ec3609e9075dabd991488edb9d7f6c045443f58963d733f99c468dbd"
+    },
+    "deploy/server/openpi/src/openpi/training/config.py": {
+      "bytes": 64601,
+      "sha256": "18e0656ac3dc633fa05fd685c0eb727bdbce9cab4d4056bd028658f6fa3470f8"
+    },
+    "deploy/server/openpi/src/openpi/training/data_loader.py": {
+      "bytes": 20527,
+      "sha256": "502cf36ad549e0bfb3ed776e6a19ffd14ad86336b136e8ded28630a4a5019aa7"
+    },
+    "deploy/server/openpi/src/openpi/training/data_loader_test.py": {
+      "bytes": 3924,
+      "sha256": "fe18f527da0f568c97f66b460a71d313d43f40a3cd8ce7e7fe0a2dfbaca4d752"
+    },
+    "deploy/server/openpi/src/openpi/training/droid_rlds_dataset.py": {
+      "bytes": 9305,
+      "sha256": "9480e75ab2dbcc16d9219ed0f0982b057e5ba555b1b2b5abc692956568bdc722"
+    },
+    "deploy/server/openpi/src/openpi/training/misc/roboarena_config.py": {
+      "bytes": 4804,
+      "sha256": "914acdd74ccf90e6779c13a5093140595c7e4f687e9e0b167439446a81d74c01"
+    },
+    "deploy/server/openpi/src/openpi/training/optimizer.py": {
+      "bytes": 3202,
+      "sha256": "cfb5d6f6aec61fbe961287b4015c652260628a0ed4682a0dbdc271b8e65431fa"
+    },
+    "deploy/server/openpi/src/openpi/training/sharding.py": {
+      "bytes": 4100,
+      "sha256": "2384acbb4c33b1796294efdb088c6cd1a1f6100f505e636434e3c0c894f7def6"
+    },
+    "deploy/server/openpi/src/openpi/training/utils.py": {
+      "bytes": 1217,
+      "sha256": "b684e674343f86ef5e976f279a586d3fe2f885e901f396ac899ed136abc7eca6"
+    },
+    "deploy/server/openpi/src/openpi/training/weight_loaders.py": {
+      "bytes": 3738,
+      "sha256": "a54ac3222f81f8c6233241bc16b6f369c9416cdaa83f7058f96f7ddcfde1a3b4"
+    },
+    "deploy/server/openpi/src/openpi/transforms.py": {
+      "bytes": 17304,
+      "sha256": "fe78017300b9874f58745b02b6ccce0294b21c65134df55b9da009ee5b549ade"
+    },
+    "deploy/server/openpi/src/openpi/transforms_test.py": {
+      "bytes": 4111,
+      "sha256": "d76f3ee8c5d7dc1c6fb6cb3b36b45ef30dd1de1ab5bc054bcb03deb79dcc06a8"
+    },
+    "deploy/server/openpi/uv.lock": {
+      "bytes": 708768,
+      "sha256": "5e3a9a0a12d9a6048afea5591f4520c98585499cbd4a8343dcabfe2aaed94e3d"
+    },
+    "recipes/step20000/cutover_step20000.py": {
+      "bytes": 6796,
+      "sha256": "174174f6b0abc0c10f5dca17fe9490fa1c99ef8417f3c809cf0e509b46ff06b9"
+    },
+    "recipes/step20000/deploy_step20000.py": {
+      "bytes": 7185,
+      "sha256": "05c038b4b2624d1c0d9b30373f420dbf1d48ad0b1380330498ca27778705b14e"
+    },
+    "recipes/step20000/deployment_plan.json": {
+      "bytes": 437,
+      "sha256": "a8df09f06b5f8d6673a938447a8f6c3ab612f962688a2d366eb77cc59a1eb61c"
+    },
+    "recipes/step20000/eval_ckpt.py": {
+      "bytes": 4705,
+      "sha256": "65325534c1318bfae5cf242b08b2ad6bfb9b516e5d1b4e3241f7a351b73c61c0"
+    },
+    "deploy/server/openpi-xpu-env/deps/umd-host/SHA256SUMS": {
+      "bytes": 898,
+      "sha256": "56a0ff472bcf853c3b34fab446a0c18e098d99abbe62b9bc352e2c689cd5fc9f"
+    },
+    "convert/docker/SHA256SUMS": {
+      "bytes": 100,
+      "sha256": "f447c282414530e5c6dd4033eebf31a068b8b10aa657cd6cd842616b80eabd1e"
+    }
+  }
+}

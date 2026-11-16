@@ -1,0 +1,15 @@
+{
+  "source": "http://127.0.0.1:8097",
+  "port": 8100,
+  "data_dir": "/data/ta2/perception",
+  "model": "",
+  "device": "cpu",
+  "max_age_s": 0.5,
+  "sample_interval_s": 10,
+  "board": {"squares_x": 7, "squares_y": 5, "square_m": 0.02876, "marker_m": 0.02109},
+  "board_print_measurement": {"file": "output/pdf/TA2_Charuco_7x5_30mm_verified.pdf", "nominal_mm": [210.0, 150.0], "measured_mm": [201.0, 144.0], "check_line_mm": 96.0, "scale": 0.9586, "note": "打印机整页缩至96%左右；实测201x144、100mm线读96mm，按各向同性0.9586折算方格28.76mm。重打成100%后改回0.03/0.022"},
+  "table_board": {"verified_flush_with_table": false, "measured_square_m": null},
+  "stationary_window_s": 1.0,
+  "bottle_dimensions": {},
+  "robot_transform": null
+}

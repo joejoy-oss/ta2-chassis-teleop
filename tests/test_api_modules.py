@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from test_mission_e2e import _MissionServer
 from ta2_client import TA2Client, TA2Error
+from mission import HOLD_PERSIST
 
 
 class _ModuleServer(_MissionServer):
@@ -137,7 +138,7 @@ class ModuleAPI(_ModuleServer, unittest.TestCase):
             self.assertEqual(result["status"], "succeeded", result)
             detail = result["result"]
             self.assertTrue(detail["grasped"], result)
-            self.assertGreater(time.monotonic() - began, 1.5)
+            self.assertGreater(time.monotonic() - began, HOLD_PERSIST)
             self.assertEqual(detail["hand"], "left")
             self.assertEqual((detail["model"], detail["rtc"], detail["seconds"]), (model["id"], True, 6))
             self.assertEqual(detail["status"], "succeeded")
@@ -172,14 +173,6 @@ class ModuleAPI(_ModuleServer, unittest.TestCase):
         self.client.stop()
         self.idle()
         self.assertIsNone(self.client.action(aid)["result"]["grasped"])
-
-    def test_monitored_time_limit_without_confirmed_grasp(self):
-        result = self.client.vla_grasp(seconds=1, stop_on_grasp=True, wait=True, poll=.03)
-        self.assertEqual(result["status"], "succeeded", result)
-        self.assertFalse(result["result"]["grasped"])
-        self.assertIsNone(result["result"]["hand"])
-        self.assertEqual(result["result"]["status"], "time_limit")
-        self.assertEqual(self.commands("vla_interrupted"), [])
 
     def test_external_stop_and_estop(self):
         for index, (code, stop) in enumerate((("STOPPED", self.client.stop), ("ESTOP", self.client.estop)), 1):
@@ -270,6 +263,18 @@ class ModuleAPI(_ModuleServer, unittest.TestCase):
                 future.result(timeout=5)
             self.assertIn(ctx.exception.code, ("MONITOR_DOWN", "ESTOP_ACTIVE"))
         self.assertEqual(self.commands("vla"), [])
+
+
+class NoGrasp(_ModuleServer, unittest.TestCase):
+    scenario = "api_no_grasp"
+
+    def test_monitored_time_limit_without_confirmed_grasp(self):
+        result = self.client.vla_grasp(seconds=1, stop_on_grasp=True, wait=True, poll=.03)
+        self.assertEqual(result["status"], "succeeded", result)
+        self.assertFalse(result["result"]["grasped"])
+        self.assertIsNone(result["result"]["hand"])
+        self.assertEqual(result["result"]["status"], "time_limit")
+        self.assertEqual(self.commands("vla_interrupted"), [])
 
 
 class RightGrasp(_ModuleServer, unittest.TestCase):

@@ -1,0 +1,13 @@
+// zenoh-bridge-ros2dds 1.9.0 settings for the client container that its command line cannot express. Mode, endpoint,
+// domain and localhost-only stay on the command line (1.9.0 takes the mode as a positional argument, there is no -m):
+//   zenoh-bridge-ros2dds client -c /opt/openpi-client/zenoh-bridge-client.json5 -e tcp/127.0.0.1:19000 \
+//       --no-multicast-scouting --ros-localhost-only -d 29
+{
+  connect: {
+    // In client mode the default is timeout_ms 0: one connection attempt at startup, then the bridge exits, whatever
+    // the endpoint's exit_on_failure says. -1 keeps retrying until the tunnel is up. Once connected, the client
+    // reconnects by itself when the link drops (router gone for 10 s: data flowing again 1 s after it returned).
+    timeout_ms: -1,
+    retry: { period_init_ms: 1000, period_max_ms: 4000, period_increase_factor: 2 },
+  },
+}

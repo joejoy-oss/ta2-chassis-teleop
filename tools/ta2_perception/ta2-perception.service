@@ -1,0 +1,20 @@
+[Unit]
+Description=TA2 read-only sandbag perception and calibration
+After=network-online.target ta2-vision.service
+
+[Service]
+Type=simple
+WorkingDirectory=/data/ta2/tools/ta2_perception
+ExecStart=/data/ta2/perception/venv/bin/python /data/ta2/tools/ta2_perception/server.py --config /data/ta2/perception/config.json
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/data/ta2/perception
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

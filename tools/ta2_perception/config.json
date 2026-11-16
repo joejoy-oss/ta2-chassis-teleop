@@ -1,0 +1,14 @@
+{
+  "source": "http://127.0.0.1:8097",
+  "port": 8098,
+  "data_dir": "/data/ta2/perception",
+  "model": "",
+  "device": "cpu",
+  "max_age_s": 0.5,
+  "sample_interval_s": 10,
+  "board": {"squares_x": 7, "squares_y": 5, "square_m": 0.03, "marker_m": 0.022},
+  "table_board": {"verified_flush_with_table": false, "measured_square_m": null},
+  "stationary_window_s": 1.0,
+  "bottle_dimensions": {},
+  "robot_transform": null
+}

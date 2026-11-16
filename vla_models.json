@@ -1,6 +1,19 @@
 {
-  "default": "grasp_v3_step20000_rtc",
+  "default": "grasp_v4_clean81_step10000_rtc",
   "models": [
+    {
+      "id": "grasp_v4_clean81_step10000_rtc",
+      "name": "新模型 v4 · 81 段 · 10000 步 · RTC 流畅模式",
+      "training": "81 段筛选演示 · warmup 2500 · 11 月 16 日",
+      "prompt": "抓取红色沙包",
+      "port": 8006,
+      "container": "grasp-v4-clean81-step10000-policy",
+      "command": [
+        "/root/vla_grasp_v4_clean81_step10000_rtc.sh"
+      ],
+      "seconds": 60,
+      "speed": 1.0
+    },
     {
       "id": "grasp_v3_step20000_rtc",
       "name": "最终模型 v3 · 20000 步（检查点 19999） · RTC 流畅模式",

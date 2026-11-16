@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>头顶识别工作台</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="bar"><div><p class="source">B70 · YOLO26</p><h1>头顶识别工作台</h1></div>
+    <span id="cameraStatus" class="status" role="status">等待头顶相机</span></div>
+  </header>
+  <main>
+    <nav aria-label="工作台页面">
+      <button type="button" data-mode="live" aria-pressed="true">实时识别</button>
+      <button type="button" data-mode="label" aria-pressed="false">采集与标注</button>
+      <button type="button" data-mode="train" aria-pressed="false">训练与启用</button>
+    </nav>
+    <div class="workspace">
+      <section class="viewer panel" aria-label="相机与标注画面">
+        <div class="panel-heading"><h2 id="viewTitle">头顶相机 · 左眼</h2><small id="frameInfo">—</small></div>
+        <div id="liveView" class="screen">
+          <canvas id="liveCanvas" width="960" height="960" hidden aria-label="头顶相机与实时识别框"></canvas>
+          <div id="noSignal" class="no-signal">等待头顶相机画面</div>
+        </div>
+        <div id="labelView" class="screen" hidden><canvas id="labelCanvas" width="960" height="960" tabindex="0" aria-label="在冻结的图像上拖拽绘制矩形框"></canvas></div>
+        <div id="cameraNote" class="viewer-note" aria-live="polite"></div>
+      </section>
+      <aside id="livePanel" class="panel controls">
+        <h2>当前画面</h2>
+        <p id="liveMessage">等待头顶相机</p>
+        <div id="classCounts" class="legend"></div>
+        <div class="divider"></div>
+        <p class="subtle" id="activeLabel">模型未加载</p>
+      </aside>
+      <aside id="labelPanel" class="panel controls" hidden>
+        <h2>采集组</h2>
+        <p class="subtle">10 组 × 5 张。训练 6 组、验证 2 组、测试 2 组，每个用途留 1 组无目标。组内每张图移动或旋转一件道具。</p>
+        <div id="groupProgress" class="progress-grid" aria-label="采集进度"></div>
+        <button id="prepareGroups" class="secondary" type="button">创建 10 个推荐组</button>
+        <label for="groupPick">当前采集组</label>
+        <select id="groupPick"></select>
+        <details id="groupDetails"><summary>新建采集组</summary>
+          <form id="groupForm">
+            <label for="groupName">组名</label><input id="groupName" maxlength="60" required placeholder="例如：桌面近端">
+            <div class="columns"><label>用途<select id="groupSplit"><option value="train">训练</option><option value="val">验证</option><option value="test">测试</option></select></label>
+            <label>画面类型<select id="groupKind"><option value="positive">含目标</option><option value="negative">无目标</option></select></label></div>
+            <button class="secondary" type="submit">创建并选择</button>
+          </form>
+        </details>
+        <button id="capture" class="primary" type="button" disabled>拍一张</button>
+        <div id="samples" class="samples" aria-label="本组照片"></div>
+        <div id="editor" hidden>
+          <div class="divider"></div>
+          <h2>矩形框标注</h2>
+          <p id="editHelp" class="subtle">拖拽画框。点击框选中后可以移动，拖角可以缩放。</p>
+          <div id="editorTools">
+            <div class="columns bottom"><label>新框类别<select id="classPick"></select></label>
+            <button id="newBox" class="secondary" type="button" aria-pressed="false">画新框</button></div>
+            <div id="boxList" class="box-list"></div>
+            <div id="selectedTools" class="columns bottom" hidden><label>选中框的类别<select id="selectedClass"></select></label>
+            <button id="deleteBox" class="secondary" type="button">删除选中的框</button></div>
+          </div>
+          <div class="actions"><button id="saveBoxes" class="primary" type="button">保存标注</button><button id="saveNegative" class="primary" type="button">保存为无目标</button><button id="backLive" type="button" class="secondary">返回实时画面</button></div>
+        </div>
+        <p id="labelNotice" class="notice" role="status"></p>
+      </aside>
+      <aside id="trainPanel" class="panel controls" hidden>
+        <h2>在 B70 上训练</h2>
+        <div id="trainCounts" class="progress-grid"></div>
+        <p id="trainDevice" class="subtle"></p>
+        <form id="trainForm" class="columns bottom">
+          <label>最多训练轮数<input id="epochs" type="number" min="1" max="80" value="80" required></label>
+          <button id="startTrain" class="primary" type="submit">开始训练</button>
+        </form>
+        <p id="trainNotice" class="notice" role="status"></p>
+        <div class="divider"></div>
+        <label for="jobPick">训练记录</label><select id="jobPick"></select>
+        <p id="jobStatus" class="subtle"></p>
+        <pre id="jobLog" hidden></pre>
+        <form id="activateForm" class="columns bottom" hidden>
+          <label>置信度门槛<input id="confidence" type="number" min="0.05" max="0.99" step="0.01" value="0.50" required></label>
+          <button id="activate" class="primary" type="submit">启用模型</button>
+        </form>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>

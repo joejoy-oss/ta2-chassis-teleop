@@ -1,0 +1,21 @@
+# 只用于构建：B70 上没有 buildx 插件，由 docker-compose-v2 驱动 BuildKit（RUN --mount 需要 BuildKit）。
+# 由 scripts/build.sh 调用，变量都由它导出；直接用时：
+#   OPENPI_COMMIT=$(cat deps/OPENPI_COMMIT) TAG=$(cat VERSION) docker compose build --progress=plain
+# 代理只以 build-arg 传入（BuildKit 的预定义参数，不写进镜像的 Env 和 history），network: host 使 127.0.0.1 上的代理可达。
+services:
+  openpi-xpu-env:
+    image: ${IMAGE:-openpi-xpu-env}:${TAG:-v0.1.0}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host
+      args:
+        OPENPI_COMMIT: ${OPENPI_COMMIT:-unknown}
+        IMAGE_VERSION: ${TAG:-v0.1.0}
+        APT_MIRROR: ${APT_MIRROR:-}
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+        no_proxy: ${no_proxy:-localhost,127.0.0.1}

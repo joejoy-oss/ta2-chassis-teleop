@@ -1,0 +1,177 @@
+diff -ru src-orig/zenoh-plugin-ros2dds/src/route_publisher.rs src-p1/zenoh-plugin-ros2dds/src/route_publisher.rs
+--- src-orig/zenoh-plugin-ros2dds/src/route_publisher.rs	2026-04-10 21:13:03.000000000 +0800
++++ src-p1/zenoh-plugin-ros2dds/src/route_publisher.rs	2026-11-04 10:53:37.225599120 +0800
+@@ -16,7 +16,7 @@
+     collections::HashSet,
+     fmt,
+     ops::Deref,
+-    sync::{atomic::Ordering, Arc},
++    sync::{atomic::Ordering, Arc, Mutex},
+     time::Duration,
+ };
+ 
+@@ -28,6 +28,7 @@
+ use zenoh::{
+     key_expr::{keyexpr, OwnedKeyExpr},
+     liveliness::LivelinessToken,
++    matching::MatchingListener,
+     qos::{CongestionControl, Priority, Reliability},
+     sample::Locality,
+     Wait,
+@@ -105,10 +106,25 @@
+     remote_routes: HashSet<String>,
+     // the list of nodes served by this route
+     local_nodes: HashSet<String>,
++    // the listener activating/deactivating the DDS Reader on matching changes; undeclared when the route is dropped
++    #[serde(skip)]
++    matching_listener: Option<MatchingListener<()>>,
++    // cleared when the route is dropped, so that a late matching callback cannot create a DDS Reader any more
++    #[serde(skip)]
++    alive: Arc<Mutex<bool>>,
+ }
+ 
+ impl Drop for RoutePublisher {
+     fn drop(&mut self) {
++        // Stop the matching listener before deleting the DDS Reader: its callback holds the zenoh publisher, so
++        // left in the background it outlives the route and, at the next matching change, creates one more DDS
++        // Reader that routes every message once more (one more copy per removed route).
++        *self.alive.lock().unwrap_or_else(|e| e.into_inner()) = false;
++        if let Some(listener) = self.matching_listener.take() {
++            if let Err(e) = listener.undeclare().wait() {
++                tracing::warn!("{self}: failed to undeclare the matching listener: {e}");
++            }
++        }
+         self.deactivate_dds_reader();
+     }
+ }
+@@ -220,10 +236,12 @@
+         // activate/deactivate DDS Reader on detection/undetection of matching Subscribers
+         // (copy/move all required args for the callback)
+         let dds_reader: Arc<AtomicDDSEntity> = Arc::new(DDS_ENTITY_NULL.into());
++        let alive = Arc::new(Mutex::new(true));
+ 
+-        publisher
++        let matching_listener = publisher
+             .matching_listener()
+             .callback({
++                let alive = alive.clone();
+                 let dds_reader = dds_reader.clone();
+                 let ros2_name = ros2_name.clone();
+                 let ros2_type = ros2_type.clone();
+@@ -237,6 +255,11 @@
+ 
+                 move |status| {
+                     tracing::debug!("{route_id} MatchingStatus changed: {status:?}");
++                    let guard = alive.lock().unwrap_or_else(|e| e.into_inner());
++                    if !*guard {
++                        tracing::debug!("{route_id}: route removed, matching change ignored");
++                        return;
++                    }
+                     if status.matching() {
+                         if let Err(e) = activate_dds_reader(
+                             &dds_reader,
+@@ -256,7 +279,6 @@
+                     }
+                 }
+             })
+-            .background()
+             .await
+             .map_err(|e| format!("Failed to listen of matching status changes: {e}",))?;
+ 
+@@ -277,6 +299,8 @@
+             liveliness_token: None,
+             remote_routes: HashSet::new(),
+             local_nodes: HashSet::new(),
++            matching_listener: Some(matching_listener),
++            alive,
+         })
+     }
+ 
+diff -ru src-orig/zenoh-plugin-ros2dds/src/route_service_cli.rs src-p1/zenoh-plugin-ros2dds/src/route_service_cli.rs
+--- src-orig/zenoh-plugin-ros2dds/src/route_service_cli.rs	2026-04-10 21:13:03.000000000 +0800
++++ src-p1/zenoh-plugin-ros2dds/src/route_service_cli.rs	2026-11-04 10:53:37.225735545 +0800
+@@ -17,7 +17,7 @@
+     fmt,
+     sync::{
+         atomic::{AtomicBool, Ordering},
+-        Arc,
++        Arc, Mutex,
+     },
+     time::Duration,
+ };
+@@ -30,6 +30,7 @@
+     internal::buffers::{Buffer, ZBuf, ZSlice},
+     key_expr::{keyexpr, OwnedKeyExpr},
+     liveliness::LivelinessToken,
++    matching::MatchingListener,
+     query::{Querier, Reply},
+     sample::Locality,
+     Wait,
+@@ -81,10 +82,24 @@
+     remote_routes: HashSet<String>,
+     // the list of nodes served by this route
+     local_nodes: HashSet<String>,
++    // the listener activating/deactivating the DDS Reader/Writer on matching changes; undeclared on drop
++    #[serde(skip)]
++    matching_listener: Option<MatchingListener<()>>,
++    // cleared when the route is dropped, so that a late matching callback cannot activate the route any more
++    #[serde(skip)]
++    alive: Arc<Mutex<bool>>,
+ }
+ 
+ impl Drop for RouteServiceCli {
+     fn drop(&mut self) {
++        // As for RoutePublisher: stop the matching listener (its callback holds the querier) before deactivating,
++        // else it outlives the route and re-creates a DDS Reader that routes every request once more.
++        *self.alive.lock().unwrap_or_else(|e| e.into_inner()) = false;
++        if let Some(listener) = self.matching_listener.take() {
++            if let Err(e) = listener.undeclare().wait() {
++                tracing::warn!("{self}: failed to undeclare the matching listener: {e}");
++            }
++        }
+         self.deactivate();
+     }
+ }
+@@ -130,10 +145,12 @@
+         // (copy/move all required args for the callback)
+         let rep_writer: Arc<AtomicDDSEntity> = Arc::new(DDS_ENTITY_NULL.into());
+         let req_reader: Arc<AtomicDDSEntity> = Arc::new(DDS_ENTITY_NULL.into());
++        let alive = Arc::new(Mutex::new(true));
+ 
+-        zenoh_querier
++        let matching_listener = zenoh_querier
+             .matching_listener()
+             .callback({
++                let alive = alive.clone();
+                 let rep_writer = rep_writer.clone();
+                 let req_reader = req_reader.clone();
+                 let ros2_name = ros2_name.clone();
+@@ -143,6 +160,11 @@
+ 
+                 move |status| {
+                         tracing::debug!("{route_id} MatchingStatus changed: {status:?}");
++                        let guard = alive.lock().unwrap_or_else(|e| e.into_inner());
++                        if !*guard {
++                            tracing::debug!("{route_id}: route removed, matching change ignored");
++                            return;
++                        }
+                         if status.matching() {
+                             if let Err(e) = activate(
+                                 &rep_writer,
+@@ -166,7 +188,6 @@
+                         }
+                 }
+             })
+-            .background()
+             .await
+             .map_err(|e| format!("Route Service Client (ROS:{ros2_name} <-> Zenoh:{zenoh_key_expr}): failed to listen of matching status changes: {e}",))?;
+ 
+@@ -182,6 +203,8 @@
+             liveliness_token: None,
+             remote_routes: HashSet::new(),
+             local_nodes: HashSet::new(),
++            matching_listener: Some(matching_listener),
++            alive,
+         })
+     }
+ 

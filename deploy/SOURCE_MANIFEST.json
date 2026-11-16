@@ -1,0 +1,420 @@
+{
+  "captured_date": "2026-11-16",
+  "host": "B70",
+  "source_repository_head": "59b722a",
+  "notes": [
+    "These imported files are byte-for-byte snapshots; runtime has its own capture-manifest.json.",
+    "Existing local HOLD_PERSIST=0.5 changes are retained separately; deployed B70 source still uses 1.5.",
+    "Systemd timer and environment requirements also captured; source code was not deployed."
+  ],
+  "files": [
+    {
+      "path": "tools/infer_monitor_ui.html",
+      "source": "/data/ta2/tools/infer_monitor_ui.html",
+      "bytes": 60689,
+      "sha256": "13fc7d1353935f1408343e848808d660948b652ad43380720ce30b84b2b8ce93"
+    },
+    {
+      "path": "tools/lerobot_episodes.py",
+      "source": "/data/ta2/tools/lerobot_episodes.py",
+      "bytes": 21238,
+      "sha256": "085de2981d123d08e4ecc61e8e686e3641a75b621ee438f6b45bf97e571639b5"
+    },
+    {
+      "path": "tools/monitor.json",
+      "source": "/data/ta2/tools/monitor.json",
+      "bytes": 697,
+      "sha256": "228c89700bf21af4d4203eb9ea3d6be52d3cf7a77f7108fd768e4627208b003e"
+    },
+    {
+      "path": "tools/regions.json",
+      "source": "/data/ta2/tools/regions.json",
+      "bytes": 1096,
+      "sha256": "5038e402958bc8ff5925627b41d30a1a1d932db3a47a6c840b98b787cd628f44"
+    },
+    {
+      "path": "tools/ta2-vision-watchdog.sh",
+      "source": "/data/ta2/tools/ta2-vision-watchdog.sh",
+      "bytes": 1900,
+      "sha256": "94e8a43fcae24713d08da110125dbe348568d4a9843dab19ea44095297a48d5f"
+    },
+    {
+      "path": "tools/ta2_convert_server.py",
+      "source": "/data/ta2/tools/ta2_convert_server.py",
+      "bytes": 38825,
+      "sha256": "32ebddbdbac13dee1241a07ca8c214930aabb52baefc48373fe7eacf6f540b3f"
+    },
+    {
+      "path": "tools/ta2_download.py",
+      "source": "/data/ta2/tools/ta2_download.py",
+      "bytes": 31858,
+      "sha256": "69808f93fa716daf09e863e304bd81352a9a3cb428943e13381a539db9d2ae2c"
+    },
+    {
+      "path": "tools/ta2_download_web.py",
+      "source": "/data/ta2/tools/ta2_download_web.py",
+      "bytes": 25979,
+      "sha256": "ac74fdee1f6fd41e57192202c5c5fa639ed3d7295963b571035614fdb8808f0a"
+    },
+    {
+      "path": "tools/ta2_episode_sources.py",
+      "source": "/data/ta2/tools/ta2_episode_sources.py",
+      "bytes": 7318,
+      "sha256": "51a7645ea706b7eb12a0eab8d55c72748efd50236414a25ebe70e85a6e7bb14a"
+    },
+    {
+      "path": "tools/ta2_export_subset.py",
+      "source": "/data/ta2/tools/ta2_export_subset.py",
+      "bytes": 13706,
+      "sha256": "9e8e47ca7807a3ea2d13bb05cefec3d2cb4d72eb99105e531eafe107a2069e87"
+    },
+    {
+      "path": "tools/ta2_grasp/frames.py",
+      "source": "/data/ta2/tools/ta2_grasp/frames.py",
+      "bytes": 2920,
+      "sha256": "0e3de04593d7f2f94924f46153ed5c321c1d55bed386a7e5a6cdabf7b7ec19b5"
+    },
+    {
+      "path": "tools/ta2_grasp/grasp_core.py",
+      "source": "/data/ta2/tools/ta2_grasp/grasp_core.py",
+      "bytes": 35839,
+      "sha256": "f2fc9c7047f6bc856dbcd3e9d603240df331b4c0bd95c662be70342edcfc26c3"
+    },
+    {
+      "path": "tools/ta2_grasp/page.html",
+      "source": "/data/ta2/tools/ta2_grasp/page.html",
+      "bytes": 33921,
+      "sha256": "207819b2a1c68f16e68b5cf1637dffd87fa18fc6aff11043fd1cd119b8ea1840"
+    },
+    {
+      "path": "tools/ta2_grasp/server.py",
+      "source": "/data/ta2/tools/ta2_grasp/server.py",
+      "bytes": 32098,
+      "sha256": "a55df9aebb5499cc194ca22ef88118ce8bc070a5b9bed498c91db0be6bbd4ff8"
+    },
+    {
+      "path": "tools/ta2_grasp/test_grasp.py",
+      "source": "/data/ta2/tools/ta2_grasp/test_grasp.py",
+      "bytes": 18797,
+      "sha256": "38beb0dade83233940d466c5e184e0b13aad3bab710c6258ee0c6bd8eac31bb8"
+    },
+    {
+      "path": "tools/ta2_groups.py",
+      "source": "/data/ta2/tools/ta2_groups.py",
+      "bytes": 8859,
+      "sha256": "94742143fc1805f08a995889f1f048e9fc1501f400b03f78a8fc50b3d6b92499"
+    },
+    {
+      "path": "tools/ta2_infer_monitor.py",
+      "source": "/data/ta2/tools/ta2_infer_monitor.py",
+      "bytes": 108201,
+      "sha256": "4b3771084cefbb6969b9d82016bb0b8ba0a296731f8e6bf161bb22b769345c43"
+    },
+    {
+      "path": "tools/ta2_merge_train.py",
+      "source": "/data/ta2/tools/ta2_merge_train.py",
+      "bytes": 10166,
+      "sha256": "3337d77a72f388ea47a52d62d0aa2b290b71626eb9cccf4237908947295661df"
+    },
+    {
+      "path": "tools/ta2_monitor_ops.sh",
+      "source": "/data/ta2/tools/ta2_monitor_ops.sh",
+      "bytes": 5015,
+      "sha256": "e7b7748611d7b1fe933bb9998d8af39ef7cee6f2d9b8480c96b615510a688da6"
+    },
+    {
+      "path": "tools/ta2_perception/calibrate.py",
+      "source": "/data/ta2/tools/ta2_perception/calibrate.py",
+      "bytes": 13298,
+      "sha256": "abd34874e828d20f6d924bb2801af0787a14e1ae861fca3b30922d24c0e67839"
+    },
+    {
+      "path": "tools/ta2_perception/config.json",
+      "source": "/data/ta2/tools/ta2_perception/config.json",
+      "bytes": 423,
+      "sha256": "9e1b5971b261e8b322354c36140fac28ade68728bacc6a7e1506991003a2e99f"
+    },
+    {
+      "path": "tools/ta2_perception/core.py",
+      "source": "/data/ta2/tools/ta2_perception/core.py",
+      "bytes": 14149,
+      "sha256": "22a590346c6fa082318e39de21b1a4775aa4eb6cfb98d0ff3e0c635e596b34c9"
+    },
+    {
+      "path": "tools/ta2_perception/dataset.py",
+      "source": "/data/ta2/tools/ta2_perception/dataset.py",
+      "bytes": 10501,
+      "sha256": "7a8a9f2a02ea61318bbdf11b85c079dc921579019b18b733b7cde32243388e3d"
+    },
+    {
+      "path": "tools/ta2_perception/index.html",
+      "source": "/data/ta2/tools/ta2_perception/index.html",
+      "bytes": 18294,
+      "sha256": "8829bad33c076d0af511cca3e8eda05a16b644945704ec7163b37d7692f3d82c"
+    },
+    {
+      "path": "tools/ta2_perception/install.sh",
+      "source": "/data/ta2/tools/ta2_perception/install.sh",
+      "bytes": 522,
+      "sha256": "bdf2320478317d6808ff34cdaa6f642b33f5c7b0c07383c9cf8d72f569f07901"
+    },
+    {
+      "path": "tools/ta2_perception/install_model.sh",
+      "source": "/data/ta2/tools/ta2_perception/install_model.sh",
+      "bytes": 1161,
+      "sha256": "d92b57c1955e65db6375f5ec54a21b61796637d71ccfb49dbc3799c3f39ee789"
+    },
+    {
+      "path": "tools/ta2_perception/requirements-model.txt",
+      "source": "/data/ta2/tools/ta2_perception/requirements-model.txt",
+      "bytes": 57,
+      "sha256": "99b1c663a3c7e47c60be43af1593797fc86b642a086e859a30528004562a0e69"
+    },
+    {
+      "path": "tools/ta2_perception/requirements.txt",
+      "source": "/data/ta2/tools/ta2_perception/requirements.txt",
+      "bytes": 56,
+      "sha256": "de01021997ed7f6aa8d547c1120cdfba2b429421d4a0bf691c15ab75834bf66d"
+    },
+    {
+      "path": "tools/ta2_perception/server.py",
+      "source": "/data/ta2/tools/ta2_perception/server.py",
+      "bytes": 24214,
+      "sha256": "9d993c896ec71688c58262cf4391deeffefb4620d6ba2adf77e1a80ef954aec0"
+    },
+    {
+      "path": "tools/ta2_perception/ta2-perception.service",
+      "source": "/data/ta2/tools/ta2_perception/ta2-perception.service",
+      "bytes": 556,
+      "sha256": "e6366c7ed1e53f5da1736687ee30b8244ff46fc64c85b58981f8a4d181752cb6"
+    },
+    {
+      "path": "tools/ta2_perception/test_perception.py",
+      "source": "/data/ta2/tools/ta2_perception/test_perception.py",
+      "bytes": 4617,
+      "sha256": "83afcc67902146da8edd317be7222bf8bf63090d12f78e4dacc918c43859aa41"
+    },
+    {
+      "path": "tools/ta2_perception/upgrade_vision.sh",
+      "source": "/data/ta2/tools/ta2_perception/upgrade_vision.sh",
+      "bytes": 2023,
+      "sha256": "6431a8d188053a563576cc6c4ec649c57854f1c24b9de0121304240a76d91e9c"
+    },
+    {
+      "path": "tools/ta2_perception/verify_stereo.py",
+      "source": "/data/ta2/tools/ta2_perception/verify_stereo.py",
+      "bytes": 4165,
+      "sha256": "e7ec2c6e4c64623989d0e15588e4ebbb83a1999cfa7d490f29c7a9732282c9e3"
+    },
+    {
+      "path": "tools/ta2_review_server.py",
+      "source": "/data/ta2/tools/ta2_review_server.py",
+      "bytes": 60924,
+      "sha256": "ff98848b4f6b0a317513823ea01c1893628c8406b4679e905db4765fde1c1acd"
+    },
+    {
+      "path": "tools/ta2_services.sh",
+      "source": "/data/ta2/tools/ta2_services.sh",
+      "bytes": 4436,
+      "sha256": "89449c961f59e639605a9b244313d2d564ca3cd9e1942c42607c79381e54f86c"
+    },
+    {
+      "path": "tools/ta2_vision_ops.sh",
+      "source": "/data/ta2/tools/ta2_vision_ops.sh",
+      "bytes": 6911,
+      "sha256": "d476d32d9ce4982637e0e88cf4405d28d40d527844aeb5e7457ff9905d551e65"
+    },
+    {
+      "path": "tools/ta2_vision_server.py",
+      "source": "/data/ta2/tools/ta2_vision_server.py",
+      "bytes": 72679,
+      "sha256": "7abaec9feb6f4e8d2b169521aa2468f680fc658e887b68fe40185f6f508da19e"
+    },
+    {
+      "path": "home/index.html",
+      "source": "/data/ta2/home/index.html",
+      "bytes": 42886,
+      "sha256": "51e7ae0a0be5c7b63bbf9e7ac0f68107fbcb662601cece0cdc0ee9cbc28d2e96"
+    },
+    {
+      "path": "perception/head-depth/core.py",
+      "source": "/data/ta2/head-depth/core.py",
+      "bytes": 14149,
+      "sha256": "22a590346c6fa082318e39de21b1a4775aa4eb6cfb98d0ff3e0c635e596b34c9"
+    },
+    {
+      "path": "perception/head-depth/foundation_depth_check.py",
+      "source": "/data/ta2/head-depth/foundation_depth_check.py",
+      "bytes": 7677,
+      "sha256": "0fea348b4b1755d96c2ec57caad4cdae69169c315d80e5d2244bd9bc067305c4"
+    },
+    {
+      "path": "perception/head-depth/head_depth_live.html",
+      "source": "/data/ta2/head-depth/head_depth_live.html",
+      "bytes": 5011,
+      "sha256": "df7df36e6014bafbb5cb87c85212c888e1a9f5a253ee6105a9f319bb5d212974"
+    },
+    {
+      "path": "perception/head-depth/head_depth_live.py",
+      "source": "/data/ta2/head-depth/head_depth_live.py",
+      "bytes": 10287,
+      "sha256": "b7157a108afc9f82e53d67a6b1a75f12447abbf6339204fa69e7075e82687b02"
+    },
+    {
+      "path": "perception/head-depth/ta2-head-depth.service",
+      "source": "/data/ta2/head-depth/ta2-head-depth.service",
+      "bytes": 844,
+      "sha256": "509f11e75d4c43b32ff580111286bb3d93186ca5fe6eb28f12dcf9636dfe32bc"
+    },
+    {
+      "path": "perception/head-detection/app/ta2_grasp/frames.py",
+      "source": "/data/ta2/head-detection/app/ta2_grasp/frames.py",
+      "bytes": 2920,
+      "sha256": "0e3de04593d7f2f94924f46153ed5c321c1d55bed386a7e5a6cdabf7b7ec19b5"
+    },
+    {
+      "path": "perception/head-detection/app/ta2_head_detection/activate_release.sh",
+      "source": "/data/ta2/head-detection/app/ta2_head_detection/activate_release.sh",
+      "bytes": 1560,
+      "sha256": "06fc5fc87aaddb22f62e8827d6fe7b5fc9f23397f2d841ea9195c2ea741711fd"
+    },
+    {
+      "path": "perception/head-detection/app/ta2_head_detection/app.py",
+      "source": "/data/ta2/head-detection/app/ta2_head_detection/app.py",
+      "bytes": 11574,
+      "sha256": "d7aba159db60aeb9a173c54ebb9fddab824b0b612225883e5063175d7d85e632"
+    },
+    {
+      "path": "perception/head-detection/app/ta2_head_detection/dataset.py",
+      "source": "/data/ta2/head-detection/app/ta2_head_detection/dataset.py",
+      "bytes": 8030,
+      "sha256": "5f237baf46fd61624478bca9aebaeb53bfc47edf26b0e98f36093955e98e2c2f"
+    },
+    {
+      "path": "perception/head-detection/app/ta2_head_detection/index.html",
+      "source": "/data/ta2/head-detection/app/ta2_head_detection/index.html",
+      "bytes": 5517,
+      "sha256": "d142f2411c94371cd0c730b91cd05014b9b335f1f15f1615453db8057c64f2b8"
+    },
+    {
+      "path": "perception/head-detection/app/ta2_head_detection/infer.py",
+      "source": "/data/ta2/head-detection/app/ta2_head_detection/infer.py",
+      "bytes": 9398,
+      "sha256": "59767b2276d525a292cb837c8db602a14b440977e008c5eea57f41ce32360767"
+    },
+    {
+      "path": "perception/head-detection/app/ta2_head_detection/install_runtime.sh",
+      "source": "/data/ta2/head-detection/app/ta2_head_detection/install_runtime.sh",
+      "bytes": 1161,
+      "sha256": "f5f9a6c73089e505d58bdc3cc04e24fe6c8b30836aba43f1861f64720aebe98e"
+    },
+    {
+      "path": "perception/head-detection/app/ta2_head_detection/smoke_test.py",
+      "source": "/data/ta2/head-detection/app/ta2_head_detection/smoke_test.py",
+      "bytes": 6915,
+      "sha256": "ba5cbf36ff988bf13715057add83c187fbee508e503ecbc5c528acb2489c1590"
+    },
+    {
+      "path": "perception/head-detection/app/ta2_head_detection/ta2-head-detection.service",
+      "source": "/data/ta2/head-detection/app/ta2_head_detection/ta2-head-detection.service",
+      "bytes": 1008,
+      "sha256": "c977e7a6b1436c8cb0e46926446ac45940a25b77ce0b7e95c9f9d8351e6023d2"
+    },
+    {
+      "path": "perception/head-detection/app/ta2_head_detection/train.py",
+      "source": "/data/ta2/head-detection/app/ta2_head_detection/train.py",
+      "bytes": 1469,
+      "sha256": "fde1ff1b2a439c5e780a6077daacf0b14cb47d9a4038e8c76417f812db8e0019"
+    },
+    {
+      "path": "deploy/config/perception/calibration/head.json",
+      "source": "/data/ta2/perception/calibration/head.json",
+      "bytes": 1828,
+      "sha256": "ccac37490a6d6bc79040371117ed9c4e892084c833cc6b5a339e1909670c532f"
+    },
+    {
+      "path": "deploy/config/perception/config.json",
+      "source": "/data/ta2/perception/config.json",
+      "bytes": 785,
+      "sha256": "dee2999edf8096c2f3403655fc2f36c9e866687df31b94e363a2b27e46ade52c"
+    },
+    {
+      "path": "deploy/config/grasp/config.json",
+      "source": "/data/ta2/grasp/config.json",
+      "bytes": 309,
+      "sha256": "d9ee81d90863a50cfa9ba2c8cc3f7e88f312fb05f301d881ce49a575fc43e968"
+    },
+    {
+      "path": "deploy/systemd/ta2-grasp.service",
+      "source": "/etc/systemd/system/ta2-grasp.service",
+      "bytes": 572,
+      "sha256": "84a0334216611f7dcc705644a0df26a3d33226240d9457aa74eabd95ca882be8"
+    },
+    {
+      "path": "deploy/systemd/ta2-head-depth.service",
+      "source": "/etc/systemd/system/ta2-head-depth.service",
+      "bytes": 844,
+      "sha256": "509f11e75d4c43b32ff580111286bb3d93186ca5fe6eb28f12dcf9636dfe32bc"
+    },
+    {
+      "path": "deploy/systemd/ta2-head-detection.service",
+      "source": "/etc/systemd/system/ta2-head-detection.service",
+      "bytes": 1008,
+      "sha256": "c977e7a6b1436c8cb0e46926446ac45940a25b77ce0b7e95c9f9d8351e6023d2"
+    },
+    {
+      "path": "deploy/systemd/ta2-home.service",
+      "source": "/etc/systemd/system/ta2-home.service",
+      "bytes": 304,
+      "sha256": "40e2a2851ac5f9aa56d390cec67caa6f2eb0505183a1c273b6b826449126e253"
+    },
+    {
+      "path": "deploy/systemd/ta2-perception.service",
+      "source": "/etc/systemd/system/ta2-perception.service",
+      "bytes": 556,
+      "sha256": "e6366c7ed1e53f5da1736687ee30b8244ff46fc64c85b58981f8a4d181752cb6"
+    },
+    {
+      "path": "deploy/systemd/ta2-vision-watchdog.service",
+      "source": "/etc/systemd/system/ta2-vision-watchdog.service",
+      "bytes": 166,
+      "sha256": "149e0a910c719e04acb5351bd931968b7780f2c8da42d5809cbfd85b981d9192"
+    },
+    {
+      "path": "deploy/systemd/ta2-vision.service",
+      "source": "/etc/systemd/system/ta2-vision.service",
+      "bytes": 818,
+      "sha256": "9d44f72c1aba52ddf8f8abe8a41f6d446e62cf29d63f34cb69be55164cc45898"
+    },
+    {
+      "path": "install_b70.sh",
+      "source": "/root/ta2-chassis-teleop/install_b70.sh",
+      "bytes": 1812,
+      "sha256": "54f9190dac35e77fe7d0fe3997f8fbc375c4c5767fc6ccd14e6e3a2846637fbc"
+    },
+    {
+      "path": "vla_models.json",
+      "source": "/root/ta2-chassis-teleop/vla_models.json",
+      "bytes": 2095,
+      "sha256": "ef5aad55ecce60ded9fcd32b1bf75d37078ffd4a8969ccdb90c0451d97f70504"
+    },
+    {
+      "path": "vla/vla_grasp_v4_clean81_step10000.sh",
+      "source": "/root/ta2-chassis-teleop/vla/vla_grasp_v4_clean81_step10000.sh",
+      "bytes": 1347,
+      "sha256": "325f1e3e6754669745f831c539ce50c5bb4c0459a6fce77b0b76fb9072308c48"
+    },
+    {
+      "path": "vla/vla_grasp_v4_clean81_step10000_rtc.sh",
+      "source": "/root/ta2-chassis-teleop/vla/vla_grasp_v4_clean81_step10000_rtc.sh",
+      "bytes": 142,
+      "sha256": "662cb77b649db68e2443965d39e6806782b85373572468b4ba76170dbdefc90d"
+    },
+    {
+      "path": "perception/head-depth/service.env",
+      "source": "/data/ta2/head-depth/service.env",
+      "bytes": 42,
+      "sha256": "5300e06755d54013ea42b71935f17d86029c9db63cae1ecfc4db340067a264fd"
+    }
+  ]
+}

@@ -5,7 +5,7 @@ import unittest
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from mission import EMPTY_CLOSED, EMPTY_PERSIST, HOLD_MARGIN, NO_LIFT_S, closed_empty, grasp_update, holding, options
+from mission import EMPTY_CLOSED, EMPTY_PERSIST, HOLD_MARGIN, HOLD_PERSIST, NO_LIFT_S, closed_empty, grasp_update, holding, options
 from arm.grasp_monitor import Feedback
 
 
@@ -40,10 +40,12 @@ class GraspTests(unittest.TestCase):
         self.assertEqual(result["z_at_close"], -0.3)
 
     def test_short_lift(self):
-        self.assertFalse(self.sequence([(0, sample())] + [(i / 10, sample(z=-0.24)) for i in range(1, 15)])["success"])
+        frames = [(0, sample())] + [(i * HOLD_PERSIST / 5, sample(z=-0.24)) for i in range(1, 6)]
+        self.assertFalse(self.sequence(frames)["success"])
 
     def test_jitter_breaks_persistence(self):
-        frames = [(0, sample())] + [(i / 10, sample(z=-0.24, eff=0 if i == 12 else -2.5)) for i in range(1, 26)]
+        frames = [(0, sample())] + [(i * HOLD_PERSIST / 4, sample(z=-0.24, eff=0 if i == 4 else -2.5))
+                                  for i in range(1, 8)]
         self.assertFalse(self.sequence(frames)["success"])
 
     def test_reopen_clears_close_height_and_breaks_hold(self):

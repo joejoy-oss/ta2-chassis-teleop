@@ -1,0 +1,6 @@
+[Unit]
+Description=TA2 Vision Viewer watchdog (restart if stopped by someone else)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /data/ta2/tools/ta2-vision-watchdog.sh

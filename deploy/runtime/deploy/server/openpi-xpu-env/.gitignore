@@ -1,0 +1,9 @@
+dist/
+*.tar
+*.tar.gz
+*.sha256
+.venv/
+# Intel GPU UMD .deb：构建前从 B70 离线安装包复制进来，只把 SHA256SUMS 纳入版本管理
+deps/umd-host/*.deb
+# A 组（PPA）UMD .deb：阶段 1 从 B70 /root/openpi-xpu/umd-ppa/ 复制来的唯一本地副本，只把 SHA256SUMS 纳入版本管理
+deps/umd-ppa/*.deb

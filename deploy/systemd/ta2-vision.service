@@ -1,0 +1,25 @@
+[Unit]
+Description=TA2 Vision Viewer (robot RTP/H.265 -> MJPEG web, :8097)
+Documentation=file:///data/ta2/tools/ta2_vision_server.py
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+# 可调参数放这里：TA2V_PORT / TA2V_WIDTH / TA2V_FPS / TA2V_QUALITY / TA2V_REGIONS …
+# ta2_vision_ops.sh 会按环境变量重写这个文件
+EnvironmentFile=-/data/ta2/vision/env
+ExecStart=/usr/bin/python3 /data/ta2/tools/ta2_vision_server.py
+# 挂了自动拉起；被 systemctl stop 时不会重启
+Restart=always
+RestartSec=3
+# 主进程退出时把 ffmpeg 子进程一起收掉
+KillMode=mixed
+TimeoutStopSec=10
+StandardOutput=append:/data/ta2/vision/viewer.log
+StandardError=append:/data/ta2/vision/viewer.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+# Python dependencies of the robot client venv in openpi-xpu-client (Python 3.10 of the Ubuntu 22.04 base, venv made
+# with --system-site-packages, so rclpy, gi, cv2 come from apt). Locked with hashes into requirements.lock by
+# client/lock.sh, which resolves inside the base image against its /usr/bin/python3.
+#
+# openpi-client's dependencies (packages/openpi-client/pyproject.toml). The package itself is not installed: its source
+# comes from the mounted code via PYTHONPATH, as in the server image.
+dm-tree>=0.1.8
+msgpack>=1.0.5
+numpy>=1.22.4,<2.0.0
+pillow>=9.0.0
+tree>=0.2.4
+# Same version as the server's uv.lock.
+websockets==15.0.1
+# What the owner's original client venv added on top (ros2-humble.sh openpi-setup); tyro at the server's version.
+tyro==0.9.22
+pandas
+pyyaml
+typing-extensions

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TA2 头部双目深度</title>
+<style>
+  :root{color-scheme:dark;font-family:system-ui,"Microsoft YaHei",sans-serif;color:#eef6f7;background:#101820}
+  *{box-sizing:border-box} body{margin:0} main{max-width:1120px;margin:auto;padding:clamp(15px,4vw,40px)}
+  header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}
+  h1{font-size:clamp(23px,4vw,32px);margin:0 0 6px} p{margin:0;color:#9eb2bd;font-size:14px}
+  #state{background:#213341;color:#d2e4ec;padding:7px 13px;border-radius:6px} #state.live{color:#96eed1;background:#164337}
+  #state.problem{color:#ffd58d;background:#4a3422} .metrics{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:17px}
+  .metrics div{flex:1;min-width:117px;background:#192631;border:1px solid #2c3b48;border-radius:6px;padding:9px 11px;color:#9eb2bd;font-size:13px}
+  b{display:block;color:#edf6fa;font:600 18px system-ui;margin-top:3px} figure{margin:0;background:#0b1118;border:1px solid #2c3b48;border-radius:8px;overflow:hidden}
+  figcaption{display:grid;grid-template-columns:1fr 1fr;background:#1e2b37;border-bottom:1px solid #2c3b48}
+  figcaption span{padding:8px 12px} figcaption span+span{border-left:1px solid #455563}
+  #frame{display:block;width:100%;aspect-ratio:2;object-fit:contain} #problem{min-height:1.3em;color:#ffd58d;white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 12px}
+  footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:13px}
+  .scale{display:flex;align-items:center;gap:8px;font-size:13px;color:#afc1cb}.bar{width:clamp(100px,24vw,220px);height:9px;border-radius:2px;background:linear-gradient(90deg,#30123b,#4666e8,#29c7dc,#65ff6e,#f4dc3c,#f97b1c,#7a0403)}
+  a{color:#8ae3c9;text-decoration:none} a:hover{text-decoration:underline} a[aria-disabled=true]{color:#8998a4;pointer-events:none}
+</style>
+<main>
+  <header><div><h1>头部双目深度</h1><p id="device">Fast-FoundationStereo · OpenVINO GPU FP32</p></div><span id="state" role="status">连接中</span></header>
+  <div class="metrics">
+    <div>深度更新率<b id="fps">—</b></div><div>模型推理<b id="infer">—</b></div>
+    <div>画面延迟<b id="age">—</b></div><div>有效深度像素<b id="coverage">—</b></div>
+  </div>
+  <p id="problem" aria-live="polite"></p>
+  <figure><figcaption><span>校正后的左眼画面</span><span>深度图</span></figcaption><img id="frame" alt="左侧显示头部相机，右侧显示同帧深度图"></figure>
+  <footer><div class="scale"><span id="near">0.25 m</span><div class="bar"></div><span id="far">2.00 m</span><span>黑色为无深度</span></div><a id="download" href="/depth-mm.png" download="head-depth-mm.png" aria-disabled="true">下载当前深度 PNG（毫米）</a></footer>
+</main>
+<script>
+  const byId = id => document.getElementById(id);
+  let lastId = '';
+  const states = {live:'实时', compiling:'正在编译模型', waiting:'等待视频', stale:'画面已过期', error:'启动失败'};
+  function renderStatus(data) {
+    const live = data.state === 'live';
+    byId('state').textContent = states[data.state] || '连接中断';
+    byId('state').className = live ? 'live' : 'problem';
+    byId('problem').textContent = data.error || (data.state === 'compiling' ? '首次编译可能需要几分钟，完成后会自动刷新。' : data.state === 'stale' ? '正在显示最后一帧，请等待新画面。' : '');
+    const metric = (field, suffix) => live && data[field] != null ? data[field] + suffix : '—';
+    byId('fps').textContent = metric('fps', ' fps');
+    byId('infer').textContent = metric('inference_ms', ' ms');
+    byId('age').textContent = metric('frame_age_ms', ' ms');
+    byId('coverage').textContent = metric('valid_percent', '%');
+    byId('download').setAttribute('aria-disabled', String(!live));
+    if (data.device) byId('device').textContent = 'Fast-FoundationStereo · ' + data.device + ' · FP32';
+    if (data.near_m != null) byId('near').textContent = data.near_m.toFixed(2) + ' m';
+    if (data.far_m != null) byId('far').textContent = data.far_m.toFixed(2) + ' m';
+  }
+  async function poll() {
+    let delay = 175;
+    try {
+      const response = await fetch('/api/depth?since=' + encodeURIComponent(lastId), {cache:'no-store', signal:AbortSignal.timeout(2500)});
+      if (!response.ok) throw Error('HTTP ' + response.status);
+      const data = await response.json();
+      renderStatus(data);
+      if (data.jpeg_b64 && data.frame_id !== lastId) {
+        byId('frame').src = 'data:image/jpeg;base64,' + data.jpeg_b64;
+        lastId = data.frame_id;
+      }
+      if (data.state !== 'live') delay = 900;
+    } catch (err) {
+      renderStatus({state:'offline', error:'无法连接深度预览服务，正在重试。'});
+      delay = 1000;
+    } finally {
+      setTimeout(poll, delay);
+    }
+  }
+  poll();
+</script>
+</html>

@@ -1,0 +1,33 @@
+# Digests the client image is built from and the archive it is shipped as. `sha256sum -c SHA256SUMS` checks the
+# lines whose file is present (requirements.lock here; the archive next to its .tar.gz); the others are records.
+# zenoh-bridge-ros2dds 1.9.0 deb: SHA256 from the Eclipse apt repository's Packages index (checked during the build)
+ebd95cb7ba2ea148ab87c7d83c7802b75f3f7cddfc6e85d7b4344ec49967e73a  zenoh-bridge-ros2dds_1.9.0_amd64.deb
+# ghcr.io/astral-sh/uv:0.13.5 index digest (Dockerfile UV_IMAGE_DIGEST)
+32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff  ghcr.io/astral-sh/uv:0.13.5
+# osrf/ros:humble-desktop repo digest (Dockerfile BASE_IMAGE)
+b624d8bcea33796d32e0dbd85326722188485759bbd6b538e4785750a5c88a7b  osrf/ros:humble-desktop
+24da06874820f127d6953c892966b4fae6c1a22c9dbcdc50dfc234204d1a5b35  requirements.lock
+# Intel VA stack sources: GitHub release tarballs (github.com/intel/<repo>/archive/refs/tags/<tag>.tar.gz), checked
+# during the build (Dockerfile stage va-builder)
+b10aceb30e93ddf13b2030eb70079574ba437be9b3b76065caf28a72c07e23e7  libva-2.23.0.tar.gz
+6ae262b95540681ad5478c63affb880135f772c95410b092009a6f7dfc04a5ba  gmmlib-intel-gmmlib-22.9.0.tar.gz
+dd9132c69d68702b87520d9f4a4ee51796d67cb164e8befbcd024257369edba7  media-driver-intel-media-26.1.4.tar.gz
+fa7ff29847b55010fbbb775b35382f97f29b7b97abe9a2f6fb3e22b36db5440a  libva-utils-2.23.0.tar.gz
+# libvapp.so source (build.sh writes it into the image label openpi.vapp-sha256)
+37ab560d4f7e828ffb70aa70f21d12a036a9e54fe6bd81af4d46c560d55e58c9  va_vpp/vapp.c
+# openpi-xpu-client:v0.1.0 (image ID sha256:073e30095dbc429b0f34f99bfde316c5c0231e06d6106773c76e9b96aae03bd1),
+# docker save | gzip -1
+7a552a86148d84900f6196420f2fa81dcc025aafea64bf72cb45eebddba1f45f  openpi-xpu-client_v0.1.0.tar.gz
+# openpi-xpu-client:v0.2.0 (image ID sha256:bdf073743a5526899f47dfe653fc06caeac3c26e72cff98d178dc07c7cc9534c,
+# openpi commit 29506182db83183feef7d0e560925dbcd5ebcdf2), docker save | gzip -1
+ce7a8800041586c23f7675f0ac0f8b11b2aec5779776967428b2c13f1de80e86  openpi-xpu-client_v0.2.0.tar.gz
+# zenoh-bridge-ros2dds 1.9.0 source (codeload.github.com/eclipse-zenoh/zenoh-plugin-ros2dds/tar.gz/refs/tags/1.9.0) and the
+# Rust 1.93.0 standalone installer (static.rust-lang.org): checked by zenoh-bridge/build_bridge.sh
+d9b1694fb287fcfe72348eb4900f81d16ec4c419a34cdfc95a4655d42216de36  zenoh-plugin-ros2dds-1.9.0.tar.gz
+b9d9f01a96a2542852ccfddd82194276ba1c86bc76353309ff636b737fc0a772  rust-1.93.0-x86_64-unknown-linux-gnu.tar.xz
+# the Q16 patch and the patched bridge it builds (zenoh-bridge/; the v0.2.1 image checks the binary's sha256)
+fd2e037d7fcf5d2515476b460bb362a4941939edc2a19f6736aebf51c2a80063  zenoh-bridge/route-lifecycle-p1.patch
+778d784a471879432463992aa9577849f48e2c19959e46768b9b4584747f7c89  zenoh-bridge-ros2dds-1.9.0-p1
+# openpi-xpu-client:v0.2.1 (image ID sha256:a429bf1494e62175e75458b4eeeaf03a64b99b1986796ce88b3523f5c5ac47c3: v0.2.0
+# plus the patched bridge), docker save | gzip -1
+642a044953bcc6b0bed64b8c3386dfc57a644bdbe3884c2b4bf3e5ed3ffd04ce  openpi-xpu-client_v0.2.1.tar.gz

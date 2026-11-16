@@ -1,0 +1,14 @@
+[Unit]
+Description=TA2 workbench launcher (static home, :8103)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/ta2/home
+ExecStart=/usr/bin/python3 -m http.server 8103 --bind 0.0.0.0 --directory /data/ta2/home
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

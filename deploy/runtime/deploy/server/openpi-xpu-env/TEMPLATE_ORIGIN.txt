@@ -1,0 +1,2 @@
+template copied from /home/liyike/2026_fall/docker_ta2/openpi-env @ 5981dba (CUDA version; to be adapted to XPU in phase 1/5)
+fix1 (2026-10-29 20:54 CST): default IMAGE in scripts/{build,run,export,sync_deps}.sh changed to openpi-xpu-env; other openpi-env wording in Dockerfile/entrypoint/script comments to be renamed in phase 1/5

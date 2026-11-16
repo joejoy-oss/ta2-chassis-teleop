@@ -1,0 +1,12 @@
+{
+  "requested_steps": 20000,
+  "source_checkpoint_index": 19999,
+  "estimated_minutes": "10-15",
+  "download_gb": 12.44,
+  "converted_gb": 7.24,
+  "compute": "existing B70 CPU conversion + GPU1 temporary third policy, approx 8GiB additional VRAM",
+  "stop_conditions": "download 1200s; conversion 480s; warmup 600s; smoke 90s; deployment deadline 1800s",
+  "port": 8005,
+  "replace": "grasp_v3_step5000_rtc",
+  "no_robot_motion": true
+}

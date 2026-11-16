@@ -1613,7 +1613,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
     <p class="status-line">当前模型：<strong id="vlamodel">读取中…</strong></p>
     <p><button id="modelsbtn" type="button" class="small" onclick="location.href='/models'">选择 / 切换模型 →</button></p>
     <p id="vlaconfig" class="status-line">读取模型配置中…</p>
-    <button id="vlarun" class="primary" title="与全流程第 3 步完全相同：每次先复位张爪再抓；抓住（夹着并抬高 4 cm 保持 1.5 秒）立即停，原地保持夹紧；空夹 2 秒 → 只张开该爪、手臂不复位，接着推理（本次剩余时间内）；夹着 10 秒不抬或到时 → 下一次（复位）；全部失败回起始姿态" disabled>开始抓取（同全流程第 3 步）</button>
+    <button id="vlarun" class="primary" title="与全流程第 3 步完全相同：每次先复位张爪再抓；抓住（夹着并抬高 4 cm 保持 0.5 秒）立即停，原地保持夹紧；空夹 2 秒 → 只张开该爪、手臂不复位，接着推理（本次剩余时间内）；夹着 10 秒不抬或到时 → 下一次（复位）；全部失败回起始姿态" disabled>开始抓取（同全流程第 3 步）</button>
     <label class="status-line">最多尝试 <select id="vlaattempts"><option value="5">5 次（同全流程）</option><option value="3">3 次</option><option value="1">1 次</option></select> · 每次最多 __ATTEMPT_S__ 秒</label>
     <div id="vla-progress" hidden>
       <div class="progress-row"><span id="vlaelapsed" role="status">已运行 0 / 60 s</span><button id="vlacancel" class="small">停止</button></div>

@@ -1,4 +1,4 @@
-# TA2 chassis teleop
+# TA2 inference and robot workbench
 
 Scripts for the TeleAvatar 2 (TA2) robot from the B70 inference host: chassis test and stepper scripts,
 standalone arm poses, a one-command VLA grasp run, and a web remote (Chinese UI) with a software
@@ -11,6 +11,12 @@ browser (any device on the robot router) --HTTP 8088--> B70: web_move.py
                                                            | zenoh bridge (inside the container)
                                                          robot 192.168.31.218
 ```
+
+2026-11-16 code handoff: the repository also contains the data download/conversion/review tools,
+read-only inference monitor, vision workbenches, and the actual XPU server/client source snapshot.
+See [deployment and recovery](docs/DEPLOYMENT.md) for the directory map, model versions, ports,
+source provenance, and commands. Model weights, demonstrations, container images and credentials
+are delivered separately. This commit does not deploy code or restart the running robot services.
 
 Measured on the real robot (see [docs/measurements.md](docs/measurements.md)): **+vx = right, +vy = forward,
 +wz = CCW**. The developer doc's "x forward, y left" is wrong for this robot.
@@ -50,14 +56,16 @@ Single column, Chinese labels, works on a phone. From top to bottom:
 - **VLA 抓取**: the big button 开始抓取（同全流程第 3 步） runs exactly full-flow step 3 (`mission.run`
   `{"flow":"grasp","attempts":5|3|1}`) with the currently selected model in `vla_models.json`: each attempt resets
   (Start pose, grippers open) and runs up to 60 s at max 1.0 rad/s; a grasp stops it holding in place, an empty close
-  (1 s), a hold without lift (10 s) or the time limit moves on to the next attempt; all failed → Start pose. **选择 / 切换模型** opens `/models`,
-  listing only RTC models: v3 step 20000 (checkpoint 19999, port 8005, default `grasp_v3_step20000_rtc`),
+  for 2 s stops VLA, opens that gripper in place, and resumes within the attempt's remaining budget;
+  a hold without lift (10 s) or the time limit moves on to the next attempt; all failed → Start pose.
+  **选择 / 切换模型** opens `/models`, listing only RTC models: v4 clean81 step 10000 (8006,
+  registry default `grasp_v4_clean81_step10000_rtc`), v3 step 20000 (checkpoint 19999, 8005),
   step 13000 (8004), step 10000 (8003), and v2 step 4999 (8000), with their container states. Selection is saved
   in `/root/ta2_vla_selected.json` without starting motion and is also used as the default model for
   **开始全流程** unless overridden via API parameters or environment variables. Switching is refused during
   motion. Below it, small arm buttons: 起始姿态 (training start pose), 起始姿态·保持夹爪, 右臂下降 5 cm,
   松开右爪, 闭合右爪, 抬起 (raise), 放下 (lower).
-- **路线**: 绿 → 红 runs `001` → pause 10 s → `002`; 红 → 绿 runs `003` → pause 10 s → `004`.
+- **路线**: 绿 → 红 runs `001` → pause 12 s → `002`; 红 → 绿 runs `003` → pause 12 s → `004`.
   The card shows the current path, pause countdown and last result.
   Place the robot at the start with the recorded heading first. Routes use Run all's continuous corner
   handling, pause only between paths (`PATH_PAUSE`), and keep running if the page disconnects.
@@ -72,7 +80,7 @@ Single column, Chinese labels, works on a phone. From top to bottom:
   copy in `/root/ta2_trails/`, reset origin); paths from `/root/ta2_paths/` plus any loaded from the
   browser. Run follows one path from the current pose (its first point is anchored there); Run all follows
   them in name order, each from where the previous ended. Corners are driven through without stopping;
-  in Run all the robot stands still for 10 s after each path before starting the next one (`PATH_PAUSE`).
+  in Run all the robot stands still for 12 s after each path before starting the next one (`PATH_PAUSE`).
   Paths do not depend on the page: once started they run to the end even if the phone loses Wi-Fi or
   the page is closed; only 停 / 急停 end them early. Click a row to preview it on the map.
 - **日志** (folded): recent events, including VLA output and E-STOP results.
@@ -182,7 +190,7 @@ stood during data collection.
 空夹位置按手标定（HOLD_EMPTY_RIGHT / HOLD_EMPTY_LEFT）：右爪 −0.0485 rad（2026-11-15 五次实测，波动 < 0.0004），
 左爪暂用 −0.059（只测过一次，需用网页「夹爪标定记录」补测）。右爪实测：实体 0.37–0.56、薄片 −0.034–0.13、空夹 −0.0485。
 力矩不区分空夹与夹住（空夹也有 −1.71），只表示夹爪在用力。
-抓取成功 = 夹着东西且相对该次闭合高度抬升 ≥ 0.04 m，连续 1.5 秒。每次尝试只有在看到夹爪张开（> 0.75）之后才开始判定，
+抓取成功 = 夹着东西且相对该次闭合高度抬升 ≥ 0.04 m，连续 0.5 秒（HOLD_PERSIST）。每次尝试只有在看到夹爪张开（> 0.75）之后才开始判定，
 夹爪每次重新张开都会清空闭合高度和计时（上一次尝试留下的合爪不会被误判）。每次尝试的夹爪读数以 ~10 Hz 写入全流程日志（grip 事件）。
 反馈丢失不会作为普通失败继续尝试。
 
@@ -206,7 +214,7 @@ B70 审查和标定时需要：
   `arm/right_fk_fit.json`（891 样本，中位残差 0.25 mm，p95 1.01 mm）；如机械结构调整，可在仿真容器重跑
   `ik_offset.py --arm left|right --fit-samples samples.npz --save-fit <arm>_fk_fit.json`。
 - 验证左/右臂的末端高度方向、拟合残差、下降 dry-run 与 −0.40 m 下限，再进行实物下降验证。
-- 标定空夹、夹住沙包、收臂及搬运时的位置/力矩阈值和持物反馈抖动，确认 4 cm/1.5 s 判定合适。
+- 标定空夹、夹住沙包、收臂及搬运时的位置/力矩阈值和持物反馈抖动，确认 4 cm/0.5 s 判定合适。
 - 确认现场路线起点、两区桌面高度、10 cm 放置距离、策略端口和容器；复核 VLA 中断后夹爪保持，
   并验证软件急停的 FSM PAUSE、监视器消息类型和频率。离线测试不能确认这些真机条件。
 

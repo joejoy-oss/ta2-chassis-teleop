@@ -38,7 +38,7 @@ THIN_SOLID_SPLIT = float(os.environ.get("THIN_SOLID_SPLIT", "0.25"))  # rad; rig
 HOLD_POS_MAX = float(os.environ.get("HOLD_POS_MAX", "0.75"))
 HOLD_EFF_MAX = float(os.environ.get("HOLD_EFF_MAX", "-1.0"))
 LIFT_MIN = float(os.environ.get("LIFT_MIN", "0.04"))
-HOLD_PERSIST = float(os.environ.get("HOLD_PERSIST", "1.5"))
+HOLD_PERSIST = float(os.environ.get("HOLD_PERSIST", "0.5"))   # s holding + lifted >= LIFT_MIN -> grasp confirmed
 DROP_PERSIST = float(os.environ.get("DROP_PERSIST", "0.25"))
 MISSION_LOG_DIR = os.environ.get("MISSION_LOG_DIR", "/root/ta2_mission")
 MONITOR_TIMEOUT = float(os.environ.get("MONITOR_TIMEOUT", "0.6"))
@@ -562,7 +562,7 @@ class Mission:
                 self._check()
                 rc = self.command.poll()
                 if rc is not None:
-                    # A grasp confirmed just as the run ended (its 1.5 s hold straddling the time limit) still counts.
+                    # A grasp confirmed just as the run ended (its HOLD_PERSIST hold straddling the time limit) still counts.
                     return rc, (self.success_hand if attempt else None)
                 if attempt and self.success_hand:
                     hand = self.success_hand

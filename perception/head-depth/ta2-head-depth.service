@@ -1,0 +1,25 @@
+[Unit]
+Description=TA2 live head stereo depth preview
+After=network.target ta2-vision.service
+
+[Service]
+Type=simple
+DynamicUser=yes
+SupplementaryGroups=render
+CacheDirectory=ta2-head-depth
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=TA2_DEPTH_DEVICE=GPU.0
+Environment=TA2_DEPTH_SIZE=480
+EnvironmentFile=-/data/ta2/head-depth/service.env
+WorkingDirectory=/data/ta2/head-depth
+ExecStart=/data/ta2/head-depth/venv/bin/python /data/ta2/head-depth/head_depth_live.py --model /data/ta2/head-depth/fast-model.onnx --calibration /data/ta2/perception/calibration/head.json --cache /var/cache/ta2-head-depth --device ${TA2_DEPTH_DEVICE} --size ${TA2_DEPTH_SIZE} --port 8102
+Restart=on-failure
+RestartSec=4
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

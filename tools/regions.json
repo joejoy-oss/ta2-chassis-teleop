@@ -1,0 +1,21 @@
+{
+  "_comment": "TA2 拼接大图裁剪表（视觉查看器 /ta2-vision 共用）。坐标归一化 [x1, y1, x2, y2]，原点左上角，取值 0~1。",
+  "_frame": "官方布局：1280 宽 x 2720 高（记作 2720x1280，即 高x宽）",
+  "_grid": "垂直 17 等分：头 6+6，腕 2.5*4（6/17=0.35294, 12/17=0.70588, 14.5/17=0.85294）",
+  "_deploy": "部署到 B70 的 /data/ta2/tools/regions.json；网页上拖动裁剪框会自动改写该文件（旧版留 .bak）",
+
+  "regions": {
+    "head_right_eye":        [0.1250, 0.0000000000, 0.8750, 0.3529411765],
+    "head_left_eye":         [0.1250, 0.3529411765, 0.8750, 0.7058823529],
+    "right_wrist_left_eye":  [0.0000, 0.7058823529, 0.5000, 0.8529411765],
+    "right_wrist_right_eye": [0.5000, 0.7058823529, 1.0000, 0.8529411765],
+    "left_wrist_left_eye":   [0.0000, 0.8529411765, 0.5000, 1.0000000000],
+    "left_wrist_right_eye":  [0.5000, 0.8529411765, 1.0000, 1.0000000000]
+  },
+
+  "policy_mapping": {
+    "head_camera": "head_left_eye",
+    "left_color": "left_wrist_right_eye",
+    "right_color": "right_wrist_left_eye"
+  }
+}

@@ -1,0 +1,1135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TA2 推理监控台</title>
+<style>
+:root{
+  color-scheme: dark;
+  --bg:#0b1117; --panel:#111a22; --panel2:#0e161d; --line:#22303c;
+  --ink:#e7eef4; --dim:#8ea2b2; --faint:#5d7180;
+  --ok:#3ddc97; --warn:#f5b942; --err:#ff5d6c; --info:#57b8ff;
+  --cmd:#57b8ff; --act:#e7eef4; --gold:#f5d06f;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+  font:14px/1.45 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);
+  border-radius:8px;padding:7px 11px;cursor:pointer}
+button:hover{border-color:#3a4d5e}
+button:active{transform:translateY(1px)}
+button.primary{background:#12324a;border-color:#1d4a68;color:#cfeaff}
+button.ghost{background:transparent}
+button.on{background:#1b2f24;border-color:#2f5c44;color:#bff5d8}
+select{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);
+  border-radius:8px;padding:7px 9px;max-width:260px}
+.app{display:flex;flex-direction:column;min-height:100%;max-width:1680px;margin:0 auto}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;
+  border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(11,17,23,.94);
+  backdrop-filter:blur(6px);z-index:20}
+.brand{font-weight:700;letter-spacing:.4px;white-space:nowrap}
+.brand small{color:var(--faint);font-weight:400;margin-left:6px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--faint);flex:none}
+.dot.live{background:var(--ok);box-shadow:0 0 0 4px rgba(61,220,151,.14);animation:pulse 1.6s infinite}
+.dot.paused{background:var(--warn)} .dot.ended{background:var(--faint)}
+@keyframes pulse{50%{box-shadow:0 0 0 7px rgba(61,220,151,.04)}}
+.chip{border:1px solid var(--line);border-radius:999px;padding:3px 9px;color:var(--dim);
+  font-size:12px;white-space:nowrap;background:var(--panel2)}
+.chip.readonly{border-color:#4a3a1d;color:#e9c477;background:#241d10}
+.chip.run{max-width:340px;overflow:hidden;text-overflow:ellipsis;color:#cfe3f2}
+.spacer{flex:1}
+main{display:grid;grid-template-columns:270px minmax(0,1fr) 300px;gap:10px;padding:10px 14px 16px;
+  align-items:start}
+.col{display:flex;flex-direction:column;gap:10px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.card h3{margin:0;padding:9px 12px;font-size:12px;font-weight:600;color:var(--dim);
+  letter-spacing:.5px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.card h3 .spacer{flex:1}
+.card .body{padding:10px 12px}
+.check{display:flex;gap:8px;align-items:flex-start;padding:4px 0;font-size:12.5px}
+.check .ic{width:16px;flex:none;text-align:center}
+.check .t{color:var(--ink)} .check .d{color:var(--faint);font-size:11px;margin-left:4px}
+.check.ok .ic{color:var(--ok)} .check.bad .ic{color:var(--err)} .check.unk .ic{color:var(--faint)}
+.kv{display:grid;grid-template-columns:1fr auto;gap:3px 8px;font-size:12.5px}
+.kv .k{color:var(--dim)} .kv .v{text-align:right;font-variant-numeric:tabular-nums}
+.kv .v.big{font-size:19px;font-weight:700;line-height:1.1}
+.kv .v.ok{color:var(--ok)} .kv .v.warn{color:var(--warn)} .kv .v.err{color:var(--err)}
+.kv .v.dim{color:var(--faint)}
+.hero{display:flex;align-items:baseline;gap:8px;padding:2px 0 6px}
+.hero .n{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+.hero .u{color:var(--dim);font-size:12px}
+.hero .cap{color:var(--faint);font-size:11px;margin-left:auto}
+.hero .n.ok{color:var(--ok)} .hero .n.warn{color:var(--warn)} .hero .n.err{color:var(--err)}
+.heroloop{font-size:11px;color:var(--faint);padding:2px 0 7px;border-bottom:1px dashed #1b2833;margin-bottom:6px}
+.cams{display:grid;grid-template-columns:1.15fr .9fr .9fr;gap:8px;padding:10px}
+.cam{position:relative;background:#05090d;border:1px solid var(--line);border-radius:9px;
+  aspect-ratio:1/1;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.cam.wide{aspect-ratio:16/10}
+.cam img{width:100%;height:100%;object-fit:contain;display:block}
+.cam .lbl{position:absolute;left:7px;top:6px;font-size:11px;color:#cfe0ec;
+  background:rgba(5,9,13,.62);padding:2px 6px;border-radius:6px}
+.cam .meta{position:absolute;right:7px;bottom:6px;font-size:10.5px;color:var(--dim);
+  background:rgba(5,9,13,.62);padding:2px 6px;border-radius:6px}
+.cam .empty{color:var(--faint);font-size:12px;text-align:center;padding:8px}
+.plotwrap{padding:8px 10px 4px}
+.plot{width:100%;height:118px;display:block}
+.plot.tall{height:150px}
+.legend{display:flex;gap:12px;flex-wrap:wrap;padding:0 12px 8px;font-size:11.5px;color:var(--dim)}
+.legend i{display:inline-block;width:14px;height:2px;background:currentColor;margin-right:5px;
+  vertical-align:middle}
+.legend .dash i{background:repeating-linear-gradient(90deg,currentColor 0 4px,transparent 4px 7px)}
+.chunkwrap{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:10px;padding:8px 10px 10px}
+.chunkplot{position:relative;min-width:0}
+.chunkcanvas{width:100%;height:158px;display:block;background:#05090d;border-radius:8px}
+.chunk-tip{position:absolute;left:0;top:0;pointer-events:none;background:#0b141b;border:1px solid #33506a;
+  border-radius:6px;padding:4px 7px;font-size:11px;color:#e7eef4;white-space:nowrap;z-index:5;display:none}
+.chunk-tip.show{display:block}
+.chunkmeta{font-size:11.5px;color:var(--dim);display:flex;flex-direction:column;gap:5px}
+.chunkmeta b{color:var(--ink);font-weight:600}
+.timeline{width:100%;height:64px;display:block;cursor:crosshair}
+.events{max-height:420px;overflow:auto}
+.ev{display:flex;gap:8px;padding:6px 12px;border-bottom:1px solid #17222c;font-size:12px;cursor:pointer}
+.ev:hover{background:#0f1a23}
+.ev .tm{color:var(--faint);font-variant-numeric:tabular-nums;flex:none;width:52px}
+.ev .msg{color:var(--ink)}
+.ev.warn .msg{color:#ffd58a} .ev.err .msg{color:#ff9aa4} .ev.info .msg{color:#a9d7ff}
+.ev.mark .msg{color:var(--gold)} .ev.mark .tag{border-color:#5a4a22;color:var(--gold)}
+.ev .tag{font-size:10px;color:var(--faint);border:1px solid var(--line);border-radius:5px;
+  padding:0 4px;flex:none;align-self:center}
+.runs{display:flex;flex-direction:column;gap:4px;max-height:260px;overflow:auto}
+.runrow{display:flex;flex-direction:column;gap:1px;padding:6px 8px;border-radius:7px;cursor:pointer;
+  border:1px solid transparent}
+.runrow:hover{background:#0f1a23;border-color:var(--line)}
+.runrow.cur{background:#10202b;border-color:#28495f}
+.runrow .n{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.runrow .m{font-size:10.5px;color:var(--faint);display:flex;gap:6px}
+.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.emptybig{padding:36px 18px;text-align:center;color:var(--dim)}
+.emptybig b{display:block;font-size:16px;color:var(--ink);margin-bottom:6px}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#1b2a36;
+  border:1px solid #33506a;border-radius:10px;padding:9px 16px;color:#dcecf8;opacity:0;
+  transition:opacity .18s;pointer-events:none;z-index:50;max-width:80vw}
+.toast.show{opacity:1}
+.foot{padding:0 14px 18px;color:var(--faint);font-size:11px;line-height:1.6}
+.selchips{display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 8px}
+.selchips button{padding:2px 7px;font-size:11px;border-radius:999px;color:var(--dim)}
+.selchips button.on{color:#0b1117;background:#9fd8ff;border-color:#9fd8ff;font-weight:700}
+.hide{display:none !important}
+@media (max-width:1180px){
+  main{grid-template-columns:minmax(0,1fr) 280px}
+  .col.left{grid-column:1 / -1;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+}
+@media (max-width:820px){
+  main{grid-template-columns:minmax(0,1fr)}
+  .col.left{grid-template-columns:1fr}
+  .cams{grid-template-columns:1fr 1fr}
+  .chunkwrap{grid-template-columns:1fr}
+  header{padding:8px 10px;gap:8px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <span class="dot" id="dot"></span>
+    <span class="brand">TA2 推理监控台<small id="ver"></small></span>
+    <span class="chip run" id="runid">—</span>
+    <span class="chip" id="prompt">—</span>
+    <span class="chip" id="port">—</span>
+    <span class="chip" id="state">无数据</span>
+    <span class="spacer"></span>
+    <span class="chip readonly">只读 · 不控制机器人</span>
+    <button class="ghost" id="btn-live">● 实时</button>
+    <button class="ghost" id="btn-mark" title="给当前时刻写一条备注（存到 /data/ta2/infer/marks，不写 run 目录）">标记 <span class="mono">m</span></button>
+    <button class="ghost" id="btn-export" title="复制本次 run 的现场摘要：状态/延迟/循环/限位/actuations">摘要</button>
+  </header>
+
+  <main>
+    <div class="col left">
+      <section class="card">
+        <h3>起飞检查单<span class="spacer"></span><span class="chip" id="check-sum">—</span></h3>
+        <div class="body" id="checks"></div>
+      </section>
+      <section class="card">
+        <h3>关键数字</h3>
+        <div class="body">
+          <div class="hero"><span class="n" id="n-budget">—</span><span class="u">% 预算</span>
+            <span class="cap" id="cap-budget">推理 ÷ 8 步计划窗口</span></div>
+          <div class="heroloop" id="loop-note">等待数据…</div>
+          <div class="kv">
+            <span class="k">延迟 p50 / p95</span><span class="v" id="n-lat">—</span>
+            <span class="k">循环 / 开销</span><span class="v" id="n-loop">—</span>
+            <span class="k">推理频率</span><span class="v" id="n-rate">—</span>
+            <span class="k">最近观测龄</span><span class="v" id="n-age">—</span>
+            <span class="k">指令频率 / 龄</span><span class="v" id="n-cmd">—</span>
+            <span class="k">跟踪误差（最新）</span><span class="v" id="n-err">—</span>
+            <span class="k">目标差 gap</span><span class="v" id="n-gap">—</span>
+            <span class="k">限位 / 夹紧</span><span class="v" id="n-clamp">—</span>
+            <span class="k">actuations</span><span class="v" id="n-act">—</span>
+          </div>
+        </div>
+      </section>
+      <section class="card">
+        <h3>最近 run<span class="spacer"></span><button class="ghost" id="btn-runs" style="padding:2px 8px;font-size:11px">刷新</button></h3>
+        <div class="body"><div class="runs" id="runs"></div></div>
+      </section>
+    </div>
+
+    <div class="col center">
+      <section class="card">
+        <h3>模型看到的三路图<span class="spacer"></span>
+          <button class="ghost hide" id="btn-static" title="这个 run 只有首/末观测，切换查看">看首帧</button>
+          <span class="chip" id="cam-meta">—</span></h3>
+        <div class="cams">
+          <figure class="cam" id="cam-head-wrap" style="margin:0">
+            <img id="cam-head" alt="head">
+            <span class="lbl">head_camera</span><span class="meta" id="cam-head-meta">—</span>
+            <div class="empty hide" id="cam-head-empty">无帧</div>
+          </figure>
+          <figure class="cam wide" id="cam-left-wrap" style="margin:0">
+            <img id="cam-left" alt="left">
+            <span class="lbl">left_color</span><span class="meta" id="cam-left-meta">—</span>
+            <div class="empty hide" id="cam-left-empty">无帧</div>
+          </figure>
+          <figure class="cam wide" id="cam-right-wrap" style="margin:0">
+            <img id="cam-right" alt="right">
+            <span class="lbl">right_color</span><span class="meta" id="cam-right-meta">—</span>
+            <div class="empty hide" id="cam-right-empty">无帧</div>
+          </figure>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>推理预算 / 延迟<span class="spacer"></span><span class="chip" id="budget-chip">—</span></h3>
+        <div class="plotwrap"><canvas class="plot" id="plot-budget"></canvas></div>
+        <div class="legend"><span style="color:var(--info)"><i></i>预算占用 %</span>
+          <span style="color:var(--faint)"><i></i>100% 红线</span>
+          <span style="color:var(--ink)"><i></i>延迟 ms（右轴）</span></div>
+      </section>
+
+      <section class="card">
+        <h3>计划 vs 执行（30 步 × 16 维）<span class="spacer"></span>
+          <button class="ghost" id="btn-heat" title="颜色归一化方式：按关节 / 全局">按关节</button>
+          <span class="chip" id="chunk-chip">—</span></h3>
+        <div class="chunkwrap">
+          <div class="chunkplot">
+            <canvas class="chunkcanvas" id="plot-chunk"></canvas>
+            <div class="chunk-tip" id="chunk-tip"></div>
+          </div>
+          <div class="chunkmeta">
+            <div>第 <b id="chunk-i">—</b> 次推理</div>
+            <div>接缝 <b id="chunk-seam">—</b></div>
+            <div>已执行 <b id="chunk-replan">—</b>（描边）</div>
+            <div>chunk id <b id="chunk-id">—</b></div>
+            <div id="chunk-range" style="color:var(--faint)">范围 —</div>
+            <div style="color:var(--faint)">行 = 动作维（L0…RG），列 = 30 步；颜色越暖值越大；描边 = 已执行步</div>
+            <div style="color:var(--faint)">按关节：看每行形状；全局：看绝对大小</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>跟踪误差 / 目标差<span class="spacer"></span><span class="chip" id="err-chip">—</span></h3>
+        <div class="plotwrap"><canvas class="plot" id="plot-err"></canvas></div>
+        <div class="legend"><span style="color:var(--warn)"><i></i>跟踪误差 rad</span>
+          <span style="color:var(--info)"><i></i>目标差 gap rad</span>
+          <span style="color:var(--err)"><i></i>限值</span></div>
+      </section>
+
+      <section class="card">
+        <h3>关节：指令（虚）vs 实际（实）<span class="spacer"></span><span class="chip" id="joint-chip">6 通道</span></h3>
+        <div class="selchips" id="selchips"></div>
+        <div class="plotwrap"><canvas class="plot tall" id="plot-joints"></canvas></div>
+      </section>
+
+      <section class="card">
+        <h3>时间轴<span class="spacer"></span>
+          <select id="sel-speed" class="hide" title="回放倍速" style="padding:2px 6px;font-size:11px">
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+          </select>
+          <button class="ghost hide" id="btn-play" title="播放/暂停（空格）">▶ 播放</button>
+          <span class="chip" id="cursor-chip">实时</span></h3>
+        <div class="plotwrap"><canvas class="timeline" id="timeline"></canvas></div>
+        <div class="legend" style="padding:0 12px 9px">
+          <span style="color:var(--info)">▏推理</span>
+          <span style="color:var(--warn)">● 告警</span>
+          <span style="color:var(--gold)">▲ 标记</span>
+          <span style="color:var(--faint)">回放：空格 播放/暂停 · ←/→ 逐秒 · 点时间轴定位；实时：点一下冻结</span>
+        </div>
+      </section>
+    </div>
+
+    <div class="col right">
+      <section class="card">
+        <h3>事件流<span class="spacer"></span><span class="chip" id="ev-count">0</span></h3>
+        <div class="events" id="events"></div>
+      </section>
+      <section class="card">
+        <h3>现场提示</h3>
+        <div class="body" style="color:var(--dim);font-size:12px;line-height:1.65">
+          停机器人：<b style="color:var(--ink)">Ctrl+C 掉 client</b>，人上前先扶臂再急停。<br>
+          本页只读：不发布 ROS、不启停 client、不写 run 目录。<br>
+          数字来源：<span class="mono">inferences.jsonl / commands.jsonl / observation_*.npz</span>。
+        </div>
+      </section>
+      <section class="card">
+        <h3>数据源</h3>
+        <div class="body kv" style="font-size:12px">
+          <span class="k">模式</span><span class="v" id="src-mode">—</span>
+          <span class="k">run 根</span><span class="v mono" id="src-root" style="max-width:170px;overflow:hidden;text-overflow:ellipsis">—</span>
+          <span class="k">帧编码</span><span class="v" id="src-frames">—</span>
+          <span class="k">观看</span><span class="v" id="src-viewers">—</span>
+          <span class="k">磁盘</span><span class="v" id="src-disk">—</span>
+        </div>
+      </section>
+    </div>
+  </main>
+  <div class="foot" id="foot">等待数据…</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const S = {
+  mode: "live", run: null, status: null, summary: null,
+  infs: [], cmds: [], events: [], marks: [], chunk: null,
+  sel: [0,2,4,8,10,12], paused: false, cursor: null,
+  window: 120, duration: 0, stream: null, runs: [],
+  lastInf: null, camObs: {}, lastRender: 0, replaying: false, connecting: false,
+  playing: false, speed: 1, chunkI: null, chunkMeta: null, heatMode: "row",
+  tickLast: 0, lastCam: 0, lastChunkFetch: 0, _lastTickRender: 0, _chunkGeom: null,
+  caps: {}, staticObs: null, staticOptions: [],
+  expected: [], limits: {max_tracking_rad: 0.2, max_initial_gap_rad: 0.6},
+  frameOk: {head:false,left:false,right:false}
+};
+const CAMS = ["head","left","right"];
+const JNAMES = ["L0","L1","L2","L3","L4","L5","L6","LG","R0","R1","R2","R3","R4","R5","R6","RG"];
+const JCOLORS = ["#57b8ff","#6fe3c1","#f5b942","#ff8aa0","#b79bff","#7ed957","#53d7e8","#d8b4fe",
+                 "#ffb4a2","#a0e7e5","#f7d488","#c3a6ff","#9be564","#66d9ef","#f5a3c7","#e0c3fc"];
+
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("show"),1800); }
+function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function fmt(v, n=2, dash="—"){ return (v===null||v===undefined||Number.isNaN(v))?dash:Number(v).toFixed(n); }
+function ms(v){ return (v===null||v===undefined||Number.isNaN(v))?"—":Math.round(v*1000)+" ms"; }
+function med(a){ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y); const m=Math.floor(s.length/2);
+  return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+function pct(v){ return (v===null||v===undefined||Number.isNaN(v))?"—":Math.round(v*100)+"%"; }
+function clock(rel){ if(rel===null||rel===undefined) return "—";
+  const s=Math.max(0,rel); const m=Math.floor(s/60); const r=s-m*60;
+  return m>0 ? `${m}:${r.toFixed(1).padStart(4,"0")}` : `${r.toFixed(1)}s`; }
+async function getJSON(url){ const r=await fetch(url,{cache:"no-store"});
+  if(!r.ok) throw new Error(url+" -> "+r.status); return r.json(); }
+
+/* ---------- 渲染：头部 / 检查单 / 数字 ---------- */
+function setState(kind, text){
+  const d=$("dot"); d.className="dot "+kind; $("state").textContent=text;
+}
+function renderHeader(){
+  const st=S.status||{}; const cur=st.current||{};
+  $("ver").textContent="v"+(st.version||"");
+  $("runid").textContent=S.run||st.current_run||"—";
+  $("prompt").textContent=cur.prompt||(S.summary&&S.summary.prompt)||"—";
+  $("port").textContent=cur.port?(":"+cur.port):(S.summary&&S.summary.port?(":"+S.summary.port):"—");
+  if(S.replaying){ setState(S.playing?"live":"paused",S.playing?"回放播放":"回放暂停"); }
+  else if(!S.run){ setState("ended","无数据"); }
+  else if(S.paused){ setState("paused","已冻结"); }
+  else if(cur.live===false){ setState("ended","已结束"); }
+  else { setState("live","运行中"); }
+  $("src-mode").textContent=st.data_source==="jsonl"?"JSONL（客户端落盘）":(st.data_source||"—");
+  $("src-root").textContent=(st.run_roots||[]).join("  ")+"";
+  $("src-root").title=(st.run_roots||[]).join("\n");
+  const fr=st.frames||{};
+  $("src-frames").textContent=(fr.enabled?(fr.ffmpeg?"开":"ffmpeg 缺失"):"关")+" / "+(fr.viewers||0)+" 观看";
+  $("src-viewers").textContent=(st.viewers||0)+"";
+  $("src-disk").textContent=(st.disk_free_gb!=null?fmt(st.disk_free_gb,0)+" G":"—");
+  let foot=(st.warnings&&st.warnings.length)?("⚠ "+st.warnings.join(" · ")):"只读 · 数据来自客户端已落盘的 run 目录";
+  if(S.caps&&S.caps.per_inference_obs===false && foot.indexOf("未逐步落图")<0){
+    foot="⚠ 该 run 未逐步落图：视频为静态首/末观测 · "+foot;
+  }
+  $("foot").textContent=foot;
+}
+function liveStats(){
+  if(S.replaying) return replayStats();
+  const cur=(S.status&&S.status.current)||{};
+  return {last:cur.last||{}, win:cur.window||{}, counts:cur.counts||{},
+          state:cur.state||{}, framework:cur.framework||{}, limits:cur.limits||S.limits,
+          loop:cur.loop||{}, live:!!(cur.live)};
+}
+function inferBudget(rec){
+  if(rec.budget!=null) return rec.budget;
+  const lim=(S.summary&&S.summary.limits)||{}; const f=lim.frequency||45;
+  const steps=rec.exec_steps||lim.replan_steps||8;   // RTC: horizon-delay；同步: replan_steps
+  return rec.sec!=null ? rec.sec/(steps/f) : null;
+}
+function seriesStats(){
+  const nowRel = S.cursor!=null ? S.cursor : (S.infs.length?S.infs[S.infs.length-1].rel:(S.duration||0));
+  const from = nowRel - S.window;
+  const infs=S.infs.filter(r=>r.rel>=from && r.rel<=nowRel+1);
+  const secs=infs.map(r=>r.sec).filter(v=>v!=null);
+  const budgets=infs.map(inferBudget).filter(v=>v!=null);
+  const cmds=S.cmds.filter(r=>r[0]>=from && r[0]<=nowRel+1);
+  const errs=cmds.map(r=>r[4]).filter(v=>v!=null);
+  const gaps=cmds.map(r=>r[5]).filter(v=>v!=null);
+  const jointClamps=S.cmds.reduce((a,r)=>a+(r[7]?1:0),0);
+  const gripperClamps=S.cmds.reduce((a,r)=>a+(r[8]?1:0),0);
+  const clamps=jointClamps+gripperClamps;
+  const lastInf=infs.length?infs[infs.length-1]:null;
+  const lastCmd=cmds.length?cmds[cmds.length-1]:null;
+  const p=(arr,q)=>{ if(!arr.length) return null; const a=[...arr].sort((x,y)=>x-y);
+    const k=(a.length-1)*q; const lo=Math.floor(k),hi=Math.ceil(k);
+    return lo===hi?a[lo]:a[lo]+(a[hi]-a[lo])*(k-lo); };
+  const rels=infs.map(r=>r.rel).filter(v=>v!=null);
+  const cycle=rels.length>1?med(rels.slice(1).map((v,i)=>v-rels[i])):null;
+  const secP50=p(secs,.5);
+  const lim=(S.summary&&S.summary.limits)||{}; const f=lim.frequency||45, rp=lim.replan_steps||8;
+  const rtcInfs=infs.filter(r=>r.delay_steps!=null&&r.horizon_steps!=null);
+  const rtcMode=rtcInfs.length>0;
+  const execVals=rtcInfs.map(r=>r.exec_steps).filter(v=>v!=null&&v>0);
+  const execSteps=rtcMode?(execVals.length?Math.max(1,Math.round(med(execVals))):rp):rp;
+  const execPlan=execSteps/f;
+  let cmdRate=null;
+  if(S.cmds.length>1){ const span=S.cmds[S.cmds.length-1][0]-S.cmds[0][0]; if(span>0) cmdRate=(S.cmds.length-1)/span; }
+  const execActual=(cycle&&secP50!=null)?cycle-secP50:null;
+  const loop={
+    mode:rtcMode?"rtc":"sync",
+    cycle_s:cycle, inference_s:secP50, exec_plan_s:execPlan,
+    exec_actual_s:rtcMode?null:execActual,
+    exec_slowdown_s:rtcMode?null:((execActual!=null)?execActual-execPlan:null),
+    inference_share:rtcMode?((execPlan&&secP50!=null)?secP50/execPlan:null)
+                            :((cycle&&secP50!=null)?secP50/cycle:null),
+    cmd_rate_hz:cmdRate, target_cmd_rate_hz:f, target_inference_rate_hz:f/execSteps,
+    exec_steps:execSteps
+  };
+  return {
+    infs, secs, budgets, cmds, loop,
+    last:{i:lastInf?lastInf.i:null, age:lastInf?Math.max(0,nowRel-lastInf.rel):null,
+          sec:lastInf?lastInf.sec:null, budget:lastInf?inferBudget(lastInf):null,
+          seam:lastInf?lastInf.seam:null, obs:lastInf?lastInf.obs:null, rel:lastInf?lastInf.rel:null},
+    win:{sec_p50:secP50, sec_p95:p(secs,.95), sec_max:secs.length?Math.max(...secs):null,
+         rate_hz:infs.length>1?(infs.length-1)/((infs[infs.length-1].rel-infs[0].rel)||1):null,
+         budget_p50:p(budgets,.5), budget_p95:p(budgets,.95),
+         tracking_max:errs.length?Math.max(...errs):null,
+         clamps, joint_clamps:jointClamps, gripper_clamps:gripperClamps,
+         cmd_age:lastCmd?Math.max(0,nowRel-lastCmd[0]):null},
+    framework:{err:lastCmd?lastCmd[4]:null, gap:lastCmd?lastCmd[5]:null},
+    state:{len:lastCmd&&lastCmd[3]?lastCmd[3].length:0, finite:!!(lastCmd&&lastCmd[3])},
+    counts:{inferences:S.infs.length, actuations:S.cmds.length},
+    live:S.mode==="live" && !S.replaying
+  };
+}
+function replayStats(){ return seriesStats(); }
+
+function renderNumbers(){
+  const st=liveStats(); const last=st.last||{}, win=st.win||{};
+  const caps=S.caps||{};
+  const noLatency=caps.latency===false;
+  const budget=noLatency?null:last.budget;
+  const nb=$("n-budget"); nb.textContent=budget!=null?(budget*100).toFixed(0):"—";
+  nb.className="n "+(budget==null?"":budget>1?"err":budget>0.9?"warn":"ok");
+  $("cap-budget").textContent=noLatency?"该 client 未记录耗时"
+    :((S.caps&&S.caps.rtc)?"推理 ÷ RTC 窗口（H−D）":(budget==null?"等待数据":"延迟 ÷ 计划间隔"));
+  $("n-lat").textContent=noLatency?"—":(win.sec_p50!=null?`${(win.sec_p50*1000).toFixed(0)} / ${(win.sec_p95*1000).toFixed(0)} ms`:"—");
+  const tgtInf=(st.loop&&st.loop.target_inference_rate_hz)||5.6;
+  $("n-rate").textContent=win.rate_hz!=null?fmt(win.rate_hz,2)+" Hz（目标 "+fmt(tgtInf,1)+"）":"—";
+  $("n-age").textContent=last.age!=null?fmt(last.age,2)+" s":"—";
+  $("n-age").className="v "+((last.age!=null&&last.age>2)?"err":"");
+  const loop=st.loop||{};
+  if(noLatency){
+    $("loop-note").textContent="该 run 未记录推理耗时（RTC client）：频率/指令/跟踪仍可用";
+    $("n-loop").textContent="—"; $("n-loop").className="v";
+  }else if(loop.mode==="rtc" || (S.caps&&S.caps.rtc)){
+    const head=(loop.exec_plan_s!=null&&loop.inference_s!=null)?loop.exec_plan_s-loop.inference_s:null;
+    $("loop-note").textContent=loop.exec_plan_s!=null
+      ?`RTC 窗口 ${ms(loop.exec_plan_s)}（${loop.exec_steps||"—"} 步 = H−D）· 推理 ${ms(loop.inference_s)} 后台并行 · 余量 ${ms(head)}`
+      :"等待 RTC 窗口数据…";
+    $("n-loop").textContent=`${ms(loop.exec_plan_s)} / 余量 ${ms(head)}`;
+    $("n-loop").className="v "+((head!=null&&head<0.02)?"warn":"");
+  }else{
+    $("loop-note").textContent=loop.cycle_s!=null
+      ?`实际循环 ${ms(loop.cycle_s)} = 推理 ${ms(loop.inference_s)} + 执行 ${ms(loop.exec_actual_s)}（计划 ${ms(loop.exec_plan_s)}，慢 ${ms(loop.exec_slowdown_s)}）`
+      :"等待循环数据…";
+    $("n-loop").textContent=loop.cycle_s!=null?`${ms(loop.cycle_s)} / 慢 ${ms(loop.exec_slowdown_s)}`:"—";
+    $("n-loop").className="v "+((loop.exec_slowdown_s!=null&&loop.exec_slowdown_s>0.05)?"warn":"");
+  }
+  $("n-cmd").textContent=loop.cmd_rate_hz!=null
+    ?`${loop.cmd_rate_hz.toFixed(1)} Hz（目标 ${(loop.target_cmd_rate_hz||45).toFixed(0)}）`
+    :"—";
+  const err=st.framework?st.framework.err:null;
+  const lim=(st.limits&&st.limits.max_tracking_rad)||S.limits.max_tracking_rad||0.2;
+  $("n-err").textContent=err!=null?fmt(err,3)+" rad":"—";
+  $("n-err").className="v "+(err!=null&&err>lim?"err":"");
+  $("n-gap").textContent=st.framework&&st.framework.gap!=null?fmt(st.framework.gap,3)+" rad":"—";
+  const playStat=S.replaying?((S.summary&&S.summary.stats)||null):null;
+  const jc=playStat?playStat.joint_clamps:(win.joint_clamps||0);
+  const gc=playStat?playStat.gripper_clamps:(win.gripper_clamps||0);
+  $("n-clamp").textContent=`${jc} / ${gc}`;
+  $("n-clamp").className="v "+(jc>0?"err":(gc>0?"warn":""));
+  $("n-act").textContent=playStat?playStat.actuations:((st.counts&&st.counts.actuations)||0);
+  $("budget-chip").textContent=budget!=null?(budget*100).toFixed(0)+" %":"—";
+  $("err-chip").textContent=win.tracking_max!=null?"max "+fmt(win.tracking_max,3):"—";
+  $("ev-count").textContent=S.events.length;
+}
+function checklist(){
+  const st=S.status||{}; const cur=st.current||{}; const sum=S.summary||{};
+  const last=(S.replaying?seriesStats().last:cur.last)||{};
+  const win=(S.replaying?seriesStats().win:cur.window)||{};
+  const rd=sum.readiness||{}; const pf=sum.preflight||{};
+  const summaryStats=(S.replaying&&S.summary&&S.summary.stats)||null;
+  const metaErr=S.replaying
+    ?((summaryStats&&summaryStats.tracking_max)??seriesStats().framework.err)
+    :((cur.framework||{}).err);
+  const jc=summaryStats?summaryStats.joint_clamps:(win.joint_clamps||0);
+  const gc=summaryStats?summaryStats.gripper_clamps:(win.gripper_clamps||0);
+  const lim=(sum.limits&&sum.limits.max_tracking)||S.limits.max_tracking_rad||0.2;
+  const expected=(S.status&&S.status.expected_prompts)||S.expected||[];
+  const prompt=(S.summary&&S.summary.prompt)||(cur.prompt);
+  const stateLen=(S.replaying?(S.cmds.length?S.cmds[S.cmds.length-1][3].length:0):(cur.state&&cur.state.len))||0;
+  const ended = !S.replaying && cur.live===false;
+  const stLive = S.replaying ? true : !!(cur.live);
+  const items=[
+    {k:"数据在更新", ok: stLive && !ended && !S.paused, unk: S.replaying || ended,
+     d: S.replaying?"回放":(ended?"已结束":(last.age!=null?fmt(last.age,1)+" s 前":(cur.live?"运行中":"无新数据")))},
+    {k:"preflight 通过", ok: pf.passed===true, unk: pf.passed==null,
+     d: pf.passed===true?"report.preflight.passed":(rd.observation_ready?"readiness.observation_ready":"—")},
+    {k:"模式兼容", ok: rd.motion_mode_compatible===true||rd.api_mode_observed===true, unk: !sum.readiness,
+     d: rd.motion_mode_compatible===true?"motion compatible":(rd.api_mode_observed?"API mode":"—")},
+    {k:"三路相机新鲜", ok: last.age!=null&&last.age<1.5, unk: last.age==null,
+     d: last.age!=null?fmt(last.age,2)+" s":"—"},
+    {k:"state 可用", ok: stateLen>=16, unk: !stateLen, d: stateLen?stateLen+" 维位置":"—"},
+    {k:"prompt 一致", ok: expected.length?expected.includes(prompt):null, unk: !expected.length,
+     d: expected.length?(expected.includes(prompt)?"在名单内":"不在名单内"):"未配置白名单"},
+    {k:"延迟在预算内", ok: (S.caps&&S.caps.latency!==false)&&last.budget!=null&&last.budget<1,
+     unk: (S.caps&&S.caps.latency===false)||last.budget==null,
+     d: (S.caps&&S.caps.latency===false)?"该 client 未记录耗时":(last.budget!=null?pct(last.budget):"—")},
+    {k:"无关节限位/跟踪超限", ok: jc===0 && !(metaErr!=null&&metaErr>lim), unk: metaErr==null,
+     d: `关节 ${jc} · 夹爪 ${gc} · err ${fmt(metaErr,3)}`}
+  ];
+  const key=items.map(it=>it.k+":"+(it.ok===true?1:it.ok===false?-1:0)+":"+it.d).join("|");
+  if(S._checkKey===key && $("checks").children.length) return;
+  S._checkKey=key;
+  const box=$("checks"); box.innerHTML="";
+  let okN=0, badN=0;
+  for(const it of items){
+    const cls=it.ok===true?"ok":it.ok===false?"bad":"unk";
+    if(cls==="ok") okN++; else if(cls==="bad") badN++;
+    const row=document.createElement("div"); row.className="check "+cls;
+    row.innerHTML=`<span class="ic">${cls==="ok"?"✓":cls==="bad"?"✗":"·"}</span>
+      <span><span class="t">${it.k}</span><span class="d">${it.d||""}</span></span>`;
+    box.appendChild(row);
+  }
+  $("check-sum").textContent=`${okN}/${items.length}`;
+  $("check-sum").style.color=badN?"var(--err)":okN===items.length?"var(--ok)":"var(--warn)";
+}
+
+/* ---------- 绘图工具 ---------- */
+function canvasCtx(cv){
+  const dpr=window.devicePixelRatio||1; const r=cv.getBoundingClientRect();
+  const w=Math.max(10,Math.floor(r.width)), h=Math.max(10,Math.floor(r.height));
+  if(cv.width!==Math.floor(w*dpr)||cv.height!==Math.floor(h*dpr)){ cv.width=Math.floor(w*dpr); cv.height=Math.floor(h*dpr); }
+  const ctx=cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+  return {ctx,w,h};
+}
+function niceTicks(min,max,n=4){
+  if(!(max>min)) return [min];
+  const span=max-min, step=Math.pow(10,Math.floor(Math.log10(span/n)));
+  const err=span/(n*step); const mult=err>=7.5?10:err>=3.5?5:err>=1.5?2:1;
+  const s=step*mult; const out=[]; for(let v=Math.ceil(min/s)*s; v<=max+1e-9; v+=s) out.push(v);
+  return out.length?out:[min,max];
+}
+function drawFrame(ctx,w,h,opts){
+  const pad={l:34,r:opts.right?38:8,t:8,b:16};
+  ctx.save(); ctx.strokeStyle="#22303c"; ctx.fillStyle="#5d7180"; ctx.lineWidth=1;
+  ctx.font="10px ui-monospace,Consolas,monospace";
+  const x0=pad.l,x1=w-pad.r,y0=pad.t,y1=h-pad.b;
+  ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x0,y1); ctx.lineTo(x1,y1); ctx.stroke();
+  for(const t of opts.xticks){ const x=x0+(t-opts.xmin)/(opts.xmax-opts.xmin)*(x1-x0);
+    ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y1); ctx.strokeStyle="#17222c"; ctx.stroke();
+    ctx.fillStyle="#5d7180"; ctx.textAlign="center"; ctx.fillText(clock(t),x,y1+11); }
+  for(const t of opts.yticks){ const y=y1-(t-opts.ymin)/(opts.ymax-opts.ymin)*(y1-y0);
+    ctx.beginPath(); ctx.moveTo(x0,y); ctx.lineTo(x1,y); ctx.strokeStyle="#17222c"; ctx.stroke();
+    ctx.fillStyle="#5d7180"; ctx.textAlign="right"; ctx.fillText(opts.fmtY?opts.fmtY(t):t.toFixed(2),x0-4,y+3); }
+  ctx.restore();
+  return {x0,x1,y0,y1,px:(v)=>x0+(v-opts.xmin)/(opts.xmax-opts.xmin)*(x1-x0),
+          py:(v)=>y1-(v-opts.ymin)/(opts.ymax-opts.ymin)*(y1-y0)};
+}
+function line(ctx,pts,color,width,dash){
+  if(pts.length<2) return; ctx.save(); ctx.strokeStyle=color; ctx.lineWidth=width||1.5;
+  if(dash) ctx.setLineDash(dash); ctx.beginPath();
+  pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.stroke(); ctx.restore();
+}
+function plotBudget(){
+  const cv=$("plot-budget"); const {ctx,w,h}=canvasCtx(cv);
+  const nowRel=S.cursor!=null?S.cursor:(S.infs.length?S.infs[S.infs.length-1].rel:(S.duration||0));
+  const xmin=Math.max(0,nowRel-S.window), xmax=Math.max(nowRel,xmin+1);
+  const infs=S.infs.filter(r=>r.rel>=xmin-1&&r.rel<=xmax+1);
+  let bmax=1.0; for(const r of infs){ const b=inferBudget(r); if(b!=null&&b>bmax) bmax=b; }
+  bmax=Math.min(2.5,Math.max(1.15,bmax*1.1));
+  let smax=0.01; for(const r of infs){ if(r.sec!=null&&r.sec>smax) smax=r.sec; }
+  smax=Math.max(0.3,smax*1.15);
+  const xt=niceTicks(xmin,xmax,4);
+  const f=drawFrame(ctx,w,h,{xmin,xmax,ymin:0,ymax:bmax,xticks:xt,
+    yticks:niceTicks(0,bmax,3),fmtY:(v)=>Math.round(v*100)+"%"});
+  // 100% 红线
+  ctx.save(); ctx.strokeStyle="#ff5d6c"; ctx.setLineDash([3,4]); ctx.globalAlpha=.7;
+  ctx.beginPath(); ctx.moveTo(f.x0,f.py(1)); ctx.lineTo(f.x1,f.py(1)); ctx.stroke(); ctx.restore();
+  // 预算面积
+  const pts=infs.map(r=>{const b=inferBudget(r); return b==null?null:[f.px(r.rel),f.py(Math.min(b,bmax))];}).filter(Boolean);
+  if(pts.length){
+    ctx.save(); ctx.beginPath(); ctx.moveTo(pts[0][0],f.y1);
+    for(const p of pts) ctx.lineTo(p[0],p[1]);
+    ctx.lineTo(pts[pts.length-1][0],f.y1); ctx.closePath();
+    ctx.fillStyle="rgba(87,184,255,.16)"; ctx.fill(); ctx.restore();
+    line(ctx,pts,"#57b8ff",1.6);
+  }
+  // 延迟（右轴）
+  ctx.save(); ctx.fillStyle="#8ea2b2"; ctx.textAlign="left"; ctx.font="10px ui-monospace,Consolas,monospace";
+  ctx.fillText(Math.round(smax*1000)+"ms",w-36,12); ctx.restore();
+  const lp=infs.map(r=>r.sec==null?null:[f.px(r.rel),f.y1-(r.sec/smax)*(f.y1-f.y0)]).filter(Boolean);
+  line(ctx,lp,"#e7eef4",1.1);
+}
+
+function plotErr(){
+  const cv=$("plot-err"); const {ctx,w,h}=canvasCtx(cv);
+  const nowRel=S.cursor!=null?S.cursor:(S.infs.length?S.infs[S.infs.length-1].rel:(S.duration||0));
+  const xmin=Math.max(0,nowRel-S.window), xmax=Math.max(nowRel,xmin+1);
+  const rows=S.cmds.filter(r=>r[0]>=xmin-2&&r[0]<=xmax+2);
+  let ymax=0.3; for(const r of rows){ if(r[4]!=null&&r[4]>ymax) ymax=r[4]; if(r[5]!=null&&r[5]>ymax) ymax=r[5]; }
+  ymax=Math.max(0.3,Math.min(2.0,ymax*1.2));
+  const f=drawFrame(ctx,w,h,{xmin,xmax,ymin:0,ymax,xticks:niceTicks(xmin,xmax,4),
+    yticks:niceTicks(0,ymax,3),fmtY:(v)=>v.toFixed(2)});
+  const lim=(S.summary&&S.summary.limits&&S.summary.limits.max_tracking)||(liveStats().limits&&liveStats().limits.max_tracking_rad)||0.2;
+  ctx.save(); ctx.strokeStyle="#ff5d6c"; ctx.setLineDash([3,4]); ctx.globalAlpha=.8;
+  ctx.beginPath(); ctx.moveTo(f.x0,f.py(Math.min(lim,ymax))); ctx.lineTo(f.x1,f.py(Math.min(lim,ymax))); ctx.stroke(); ctx.restore();
+  const ep=rows.filter(r=>r[4]!=null).map(r=>[f.px(r[0]),f.py(Math.min(r[4],ymax))]);
+  const gp=rows.filter(r=>r[5]!=null).map(r=>[f.px(r[0]),f.py(Math.min(r[5],ymax))]);
+  line(ctx,gp,"#57b8ff",1.1,[4,3]);
+  line(ctx,ep,"#f5b942",1.7);
+}
+
+function plotJoints(){
+  const cv=$("plot-joints"); const {ctx,w,h}=canvasCtx(cv);
+  const nowRel=S.cursor!=null?S.cursor:(S.infs.length?S.infs[S.infs.length-1].rel:(S.duration||0));
+  const xmin=Math.max(0,nowRel-S.window), xmax=Math.max(nowRel,xmin+1);
+  const rows=S.cmds.filter(r=>r[0]>=xmin-2&&r[0]<=xmax+2);
+  let ymin=1e9,ymax=-1e9;
+  for(const r of rows){
+    const cmd=r[2]||[], q=r[3]||[];
+    for(const j of S.sel){
+      if(cmd[j]!=null){ ymin=Math.min(ymin,cmd[j]); ymax=Math.max(ymax,cmd[j]); }
+      if(q[j]!=null){ ymin=Math.min(ymin,q[j]); ymax=Math.max(ymax,q[j]); }
+    }
+  }
+  if(!(ymax>ymin)){ ymin=-1; ymax=1; }
+  const pad=(ymax-ymin)*0.08; ymin-=pad; ymax+=pad;
+  const f=drawFrame(ctx,w,h,{xmin,xmax,ymin:ymax?ymin:-1,ymax:ymax||1,xticks:niceTicks(xmin,xmax,4),
+    yticks:niceTicks(ymin,ymax,3),fmtY:(v)=>v.toFixed(1)});
+  S.sel.forEach((j,idx)=>{
+    const col=JCOLORS[j%JCOLORS.length];
+    const cp=rows.filter(r=>r[2]&&r[2][j]!=null).map(r=>[f.px(r[0]),f.py(r[2][j])]);
+    const qp=rows.filter(r=>r[3]&&r[3][j]!=null).map(r=>[f.px(r[0]),f.py(r[3][j])]);
+    line(ctx,qp,col,1.2);
+    line(ctx,cp,col,1.4,[3,3]);
+  });
+  ctx.save(); ctx.fillStyle="#8ea2b2"; ctx.font="10px ui-monospace,Consolas,monospace"; ctx.textAlign="left";
+  ctx.fillText(S.sel.map(j=>JNAMES[j]).join(" "),f.x0,10); ctx.restore();
+}
+
+function drawChunk(){
+  const cv=$("plot-chunk"); const {ctx,w,h}=canvasCtx(cv);
+  const chunk=S.chunk; const lim=(S.summary&&S.summary.limits)||{}; const replan=lim.replan_steps||8;
+  if(!chunk||!chunk.length){
+    const noChunk=S.caps && S.caps.chunk===false;
+    ctx.fillStyle="#3b4c5a"; ctx.font="11px sans-serif"; ctx.textAlign="center";
+    ctx.fillText(noChunk?"该 run 未记录逐步动作块（RTC client）":"等待动作块…",w/2,h/2);
+    $("chunk-i").textContent=S.chunkI!=null?S.chunkI:"—";
+    $("chunk-seam").textContent="—"; $("chunk-id").textContent="—";
+    $("chunk-range").textContent=noChunk?"该 client 未落盘 actions19":"范围 —";
+    $("chunk-replan").textContent="—";
+    $("btn-heat").textContent=S.heatMode==="row"?"按关节":"全局";
+    S._chunkGeom=null; return;
+  }
+  const steps=chunk.length, dims=chunk[0].length;
+  const meta=S.chunkMeta||{};
+  const execStart=Math.max(0,Math.min(steps,(meta.delay_steps!=null?meta.delay_steps:0)));
+  const execEnd=Math.max(execStart+1,Math.min(steps,(meta.horizon_steps!=null?meta.horizon_steps:replan)));
+  $("chunk-replan").textContent=meta.horizon_steps!=null
+    ? `第 ${execStart}–${execEnd-1} 步，共 ${execEnd-execStart} 步`
+    : `前 ${Math.min(replan,steps)} 步`;
+  const left=24, right=4, top=5, bottom=14;
+  const plotW=Math.max(10,w-left-right), plotH=Math.max(10,h-top-bottom);
+  const gx=plotW/steps, gy=plotH/dims;
+  const rowMin=[],rowMax=[]; let gMin=1e9,gMax=-1e9;
+  for(let d=0;d<dims;d++){
+    let mn=1e9,mx=-1e9;
+    for(let s=0;s<steps;s++){ const v=chunk[s][d]; if(v!=null&&isFinite(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);} }
+    rowMin[d]=mn; rowMax[d]=mx; gMin=Math.min(gMin,mn); gMax=Math.max(gMax,mx);
+  }
+  if(!(gMax>gMin)){gMin=-1;gMax=1;}
+  const mode=S.heatMode==="global"?"global":"row";
+  ctx.clearRect(0,0,w,h);
+  for(let d=0;d<dims;d++){
+    const mn=mode==="row"?rowMin[d]:gMin;
+    const mx=mode==="row"?rowMax[d]:gMax;
+    const span=(mx-mn)||1;
+    for(let s=0;s<steps;s++){
+      const v=chunk[s][d]; if(v==null||!isFinite(v)) continue;
+      const t=Math.max(0,Math.min(1,(v-mn)/span));
+      const hue=Math.round(230-230*t);
+      ctx.fillStyle=`hsl(${hue}, 72%, 52%)`;
+      ctx.fillRect(left+s*gx, top+d*gy, Math.max(1,gx-0.6), Math.max(1,gy-0.6));
+    }
+  }
+  // 已执行窗口描边：RTC 是 delay..horizon，同步模式是 0..replan
+  ctx.save(); ctx.strokeStyle="#e7eef4"; ctx.lineWidth=1.5;
+  ctx.strokeRect(left+execStart*gx, top, (execEnd-execStart)*gx, dims*gy); ctx.restore();
+  // 行标签（动作维）
+  ctx.save(); ctx.fillStyle="#8ea2b2"; ctx.font="7px ui-monospace,Consolas,monospace";
+  ctx.textAlign="right"; ctx.textBaseline="middle";
+  for(let d=0;d<dims;d++) ctx.fillText(JNAMES[d]||("J"+d), left-3, top+(d+0.5)*gy);
+  ctx.restore();
+  // 步刻度
+  ctx.save(); ctx.fillStyle="#5d7180"; ctx.font="8px ui-monospace,Consolas,monospace";
+  ctx.textAlign="left"; ctx.textBaseline="top"; ctx.fillText("0", left, h-bottom+2);
+  for(const s of [8,16,24,steps]){
+    const x=left+Math.min(s,steps)*gx;
+    ctx.textAlign=s>=steps?"right":"center";
+    ctx.fillText(String(s), x, h-bottom+2);
+  }
+  ctx.restore();
+  S._chunkGeom={left,top,gx,gy,steps,dims,execStart,execEnd};
+  $("chunk-i").textContent=S.chunkI!=null?S.chunkI:"—";
+  $("chunk-seam").textContent=meta.seam!=null?fmt(meta.seam,4):"—";
+  $("chunk-id").textContent=meta.chunk_id!=null?meta.chunk_id:"—";
+  $("chunk-range").textContent=mode==="row"
+    ?"每行独立归一化（看形状）"
+    :`全局 ${gMin.toFixed(2)} ~ ${gMax.toFixed(2)}`;
+  $("btn-heat").textContent=mode==="row"?"按关节":"全局";
+}
+
+function drawTimeline(){
+  const cv=$("timeline"); const {ctx,w,h}=canvasCtx(cv);
+  const dur=S.replaying?Math.max(1,S.duration):Math.max(1,(S.infs.length?S.infs[S.infs.length-1].rel:0));
+  const pad={l:8,r:8,t:8,b:18};
+  const x0=pad.l,x1=w-pad.r,y0=h-pad.b;
+  ctx.save(); ctx.fillStyle="#0a131a"; ctx.fillRect(x0,y0-16,x1-x0,16);
+  const px=(v)=>x0+(v/dur)*(x1-x0);
+  // 推理刻度
+  ctx.strokeStyle="rgba(87,184,255,.35)"; ctx.beginPath();
+  for(const r of S.infs){ const x=px(r.rel); ctx.moveTo(x,y0-16); ctx.lineTo(x,y0-10); }
+  ctx.stroke();
+  // 告警
+  for(const e of S.events){ if(e.rel==null) continue;
+    const x=px(e.rel); ctx.fillStyle=e.sev==="err"?"#ff5d6c":e.sev==="warn"?"#f5b942":"#57b8ff";
+    ctx.beginPath(); ctx.arc(x,y0-6,2.6,0,Math.PI*2); ctx.fill(); }
+  // 标记
+  for(const m of S.marks){ if(m.rel==null) continue;
+    const x=px(m.rel); ctx.fillStyle="#f5d06f"; ctx.beginPath();
+    ctx.moveTo(x,y0-13); ctx.lineTo(x-3.2,y0-18); ctx.lineTo(x+3.2,y0-18); ctx.closePath(); ctx.fill(); }
+  // 光标
+  if(S.cursor!=null){ const x=px(S.cursor); ctx.strokeStyle="#ffffff"; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.moveTo(x,y0-18); ctx.lineTo(x,y0); ctx.stroke(); }
+  ctx.fillStyle="#5d7180"; ctx.font="10px ui-monospace,Consolas,monospace";
+  ctx.textAlign="left"; ctx.fillText("0",x0,y0+12);
+  ctx.textAlign="right"; ctx.fillText(clock(dur),x1,y0+12);
+  ctx.restore();
+}
+
+function renderRuns(){
+  const box=$("runs"); box.innerHTML="";
+  const runs=S.runs||[];
+  if(!runs.length){ box.innerHTML='<div class="emptybig" style="padding:14px">没有找到 run<br><span style="font-size:11px">检查 client 是否在写 JSONL</span></div>'; return; }
+  for(const r of runs.slice(0,14)){
+    const row=document.createElement("div"); row.className="runrow"+(r.id===S.run?" cur":"");
+    row.innerHTML=`<span class="n">${esc(r.id)}</span>
+      <span class="m"><span>${r.live?"● 运行中":esc(r.status||"已结束")}</span>
+      <span>${esc(r.prompt||"")}</span></span>`;
+    row.onclick=()=>{ if(S.mode==="live"){ startReplay(r.id); } else { startReplay(r.id); } };
+    box.appendChild(row);
+  }
+}
+function renderEvents(){
+  const items=[];
+  for(const e of S.events) items.push({...e,_mark:false});
+  for(const m of S.marks){
+    if(!S.replaying && m.source==="alert") continue;  // 实时时告警已在事件流里，避免重复
+    items.push({_mark:true,kind:"mark",sev:"mark",rel:m.rel,msg:m.note||"标记",t:m.t,source:m.source});
+  }
+  items.sort((a,b)=>(b.rel??-1)-(a.rel??-1));
+  const evs=items.slice(0,60);
+  const key=evs.length+"|"+(evs[0]?((evs[0].t||evs[0].rel)+"|"+evs[0].msg+(evs[0]._mark?"|m":"")):"");
+  if(S._evKey===key && $("events").children.length) return;
+  S._evKey=key;
+  const box=$("events"); box.innerHTML="";
+  if(!evs.length){ box.innerHTML='<div class="emptybig" style="padding:16px">暂无事件</div>'; return; }
+  for(const e of evs){
+    const row=document.createElement("div"); row.className="ev "+(e._mark?"mark":(e.sev||"info"));
+    const rel=e.rel!=null?clock(e.rel):"—";
+    row.innerHTML=`<span class="tm">${rel}</span><span class="msg">${esc(e.msg||e.kind||"")}</span>
+      <span class="tag">${esc(e._mark?"mark":(e.kind||""))}</span>`;
+    row.onclick=()=>{ if(e.rel!=null){ S.playing=false; S.paused=true; S.cursor=e.rel; updatePlayUI(); jumpFrame(); } };
+    box.appendChild(row);
+  }
+}
+
+/* ---------- 相机 ---------- */
+function setCam(cam,obs,i,rel){
+  const staticMode=!obs && !!S.staticObs;
+  const useObs=obs||S.staticObs;
+  const label=S.staticObs==="final_observation.npz"?"末帧":"首帧";
+  for(const c of CAMS){
+    const img=$("cam-"+c), empty=$("cam-"+c+"-empty"), meta=$("cam-"+c+"-meta");
+    if(!S.run||!useObs){ empty.classList.remove("hide"); img.classList.add("hide"); meta.textContent="—"; continue; }
+    const url="/api/run/"+encodeURIComponent(S.run)+"/frame?cam="+c
+      +"&obs="+encodeURIComponent(useObs)
+      +(staticMode?"":"&n="+(i||0)+"&v="+Math.round((rel||0)*10));
+    if(S.camObs[c]===url) continue;
+    S.camObs[c]=url;
+    img.onerror=()=>{ empty.classList.remove("hide"); img.classList.add("hide"); S.frameOk[c]=false; };
+    img.onload=()=>{ empty.classList.add("hide"); img.classList.remove("hide"); S.frameOk[c]=true; };
+    img.src=url;
+    meta.textContent=staticMode?("静态 · "+label):`#${i!=null?i:"—"} · ${clock(rel)}`;
+  }
+  $("cam-meta").textContent=staticMode
+    ?("静态 · "+label+"（未逐步落图）")
+    :(useObs?("obs "+useObs):"—");
+}
+function jumpFrame(){
+  if(S.cursor==null){ if(S.infs.length){ const last=S.infs[S.infs.length-1]; setCam("head",last.obs,last.i,last.rel); } return; }
+  let best=null,bd=1e9;
+  for(const r of S.infs){ const d=Math.abs(r.rel-S.cursor); if(d<bd){bd=d;best=r;} }
+  if(best){ setCam("head",best.obs,best.i,best.rel); ensureChunk(best.rel); }
+}
+async function ensureChunk(rel,force){
+  if(!S.run||!S.infs.length) return;
+  let best=null,bd=1e9;
+  for(const r of S.infs){ if(r.rel==null) continue; const d=Math.abs(r.rel-rel); if(d<bd){bd=d;best=r;} }
+  if(!best) return;
+  if(!force && best.i===S.chunkI) return;
+  const now=performance.now();
+  if(!force && now-S.lastChunkFetch<120) return;
+  S.lastChunkFetch=now;
+  const want=best.i;
+  S._chunkWant=want;
+  try{
+    const d=await getJSON("/api/run/"+encodeURIComponent(S.run)+"/chunk?i="+want);
+    if(S._chunkWant!==want) return;  // 播放时后发先至的旧响应丢弃
+    if(d.ok&&d.chunk&&d.chunk.chunk16){ S.chunk=d.chunk.chunk16; S.chunkI=d.chunk.i; S.chunkMeta=d.chunk; schedule(); }
+  }catch(e){ /* 回放时单块取不到就保留上一块 */ }
+}
+
+/* ---------- 事件流 / SSE ---------- */
+function resetRun(){
+  S.infs=[]; S.cmds=[]; S.events=[]; S.marks=[]; S.chunk=null; S.camObs={};
+  S.cursor=null; S.paused=false; S.playing=false; S.chunkI=null; S.chunkMeta=null;
+  S.caps={}; S.staticObs=null; S.staticOptions=[];
+}
+function applyCaps(summary,infs){
+  S.caps=(summary&&summary.capabilities)||{};
+  S.staticOptions=[];
+  if(S.caps.final_obs) S.staticOptions.push("final_observation.npz");
+  if(S.caps.probe_obs) S.staticOptions.push("observation.npz");
+  const hasPer=(infs||[]).some(r=>r.obs);
+  if(!hasPer && S.staticOptions.length){
+    if(!S.staticObs || S.staticOptions.indexOf(S.staticObs)<0) S.staticObs=S.staticOptions[0];
+  }else if(hasPer){
+    S.staticObs=null;
+  }
+  updateStaticUI();
+}
+function updateStaticUI(){
+  const btn=$("btn-static");
+  const show=!!S.staticObs && S.staticOptions.length>1;
+  btn.classList.toggle("hide",!show);
+  if(show) btn.textContent=S.staticObs==="final_observation.npz"?"看首帧":"看末帧";
+}
+async function loadSeries(runId,replay){
+  const [sum,ser]=await Promise.all([
+    getJSON("/api/run/"+encodeURIComponent(runId)+"/summary"),
+    getJSON("/api/run/"+encodeURIComponent(runId)+"/series?window=3600")
+  ]);
+  S.summary=sum.summary||{}; S.run=runId;
+  const s=ser.series||{};
+  const lim=S.summary.limits||{}; const f=lim.frequency||45,rp=lim.replan_steps||8;
+  S.infs=(s.inferences||[]).map(r=>{
+    const steps=r.exec_steps||rp;
+    return {...r,
+      budget:r.budget!=null?r.budget:(r.sec!=null?r.sec/(steps/f):null),
+      seam:r.seam??null,gap:null,chunk16:null};
+  });
+  S.cmds=s.commands||[]; S.events=s.events||[]; S.marks=s.marks||[];
+  S.duration=Math.max(0.5,s.duration_s||0);
+  applyCaps(S.summary,S.infs);
+  S.chunk=null; S.chunkI=null; S.chunkMeta=null; S.playing=false;
+  if(replay){ S.cursor=S.infs.length?S.infs[0].rel:0; S.paused=true; }
+  else{
+    S.cursor=null; S.paused=false;
+    S.chunk=s.last_chunk16||null;
+    if(S.infs.length){
+      const last=S.infs[S.infs.length-1];
+      S.chunkI=last.i;
+      S.chunkMeta={i:last.i,seam:last.seam,chunk_id:last.chunk_id,obs:last.obs,
+        exec_steps:last.exec_steps,delay_steps:last.delay_steps,
+        horizon_steps:last.horizon_steps,prefix_start:last.prefix_start};
+    }
+  }
+  if(S.infs.length){ const first=S.infs[0]; setCam("head",first.obs,first.i,first.rel); }
+  updateCursorChip(); renderAll();
+}
+async function connectLive(){
+  if(S.connecting) return;
+  S.connecting=true;
+  try{ await connectLiveInner(); }
+  catch(e){ setTimeout(connectLive,2500); }
+  finally{ S.connecting=false; }
+}
+async function connectLiveInner(){
+  if(S.stream){ try{S.stream.close();}catch(e){} S.stream=null; }
+  S.replaying=false; S.mode="live"; S.duration=0;
+  const st=await getJSON("/api/status");
+  S.status=st; S.runs=st.runs||[];
+  const run=st.current_run;
+  if(!run){ S.run=null; resetRun(); renderAll(); return; }
+  S.run=run; S.summary=null;
+  history.replaceState(null,"",location.pathname);
+  if(st.current && st.current.live===false){ await loadSeries(run,false); return; }
+  const es=new EventSource("/api/run/"+encodeURIComponent(run)+"/stream");
+  S.stream=es;
+  es.addEventListener("hello",(ev)=>{
+      const d=JSON.parse(ev.data);
+      resetRun();
+      S.summary=d.summary||null; S.run=d.run;
+      const ser=d.series||{};
+      (ser.inferences||[]).forEach(r=>S.infs.push({...r}));
+      (ser.commands||[]).forEach(r=>S.cmds.push(r));
+      (ser.events||[]).forEach(e=>S.events.push(e));
+      (ser.marks||[]).forEach(m=>S.marks.push(m));
+      applyCaps(d.summary,S.infs);
+      S.playing=false;
+      S.chunk=ser.last_chunk16||(S.infs.length?S.infs[S.infs.length-1].chunk16:null)||null;
+      if(S.infs.length){
+        const last=S.infs[S.infs.length-1];
+        S.chunkI=last.i;
+        S.chunkMeta={i:last.i,seam:last.seam,chunk_id:last.chunk_id,obs:last.obs,
+          exec_steps:last.exec_steps,delay_steps:last.delay_steps,
+          horizon_steps:last.horizon_steps,prefix_start:last.prefix_start};
+        setCam("head",last.obs,last.i,last.rel);
+      }
+      updatePlayUI();
+      renderAll();
+    });
+    es.addEventListener("inference",(ev)=>{
+      const d=JSON.parse(ev.data); S.infs.push(d);
+      S.chunk=d.chunk16||S.chunk;
+      S.chunkI=d.i;
+      S.chunkMeta={i:d.i,seam:d.seam,chunk_id:d.chunk_id,obs:d.obs,
+        exec_steps:d.exec_steps,delay_steps:d.delay_steps,
+        horizon_steps:d.horizon_steps,prefix_start:d.prefix_start};
+      if(S.infs.length>5000) S.infs.splice(0,S.infs.length-5000);
+      if(!S.paused){ S.lastInf=d; setCam("head",d.obs,d.i,d.rel); }
+      schedule();
+    });
+    es.addEventListener("commands",(ev)=>{
+      const d=JSON.parse(ev.data); const rows=d.rows||[];
+      for(const r of rows) S.cmds.push(r);
+      if(S.cmds.length>16000) S.cmds.splice(0,S.cmds.length-16000);
+      schedule();
+    });
+    es.addEventListener("alert",(ev)=>{ const d=JSON.parse(ev.data); S.events.push(d);
+      if(S.events.length>500) S.events.shift();
+      if(d.rel!=null&&!S.paused){ S.marks.push({rel:d.rel,note:d.msg,source:"alert"}); }
+      schedule(); });
+    es.addEventListener("mark",(ev)=>{ const d=JSON.parse(ev.data); S.marks.push(d); schedule(); });
+    es.addEventListener("run_changed",(ev)=>{
+      const d=JSON.parse(ev.data);
+      if(d.run && d.run!==S.run){ toast("切换 run：" + d.run); setTimeout(connectLive,250); }
+    });
+    es.onerror=()=>{ /* EventSource 自动重连；服务端关闭时 1s 后重连 */ };
+}
+async function refreshStatus(){
+  try{
+    S.status=await getJSON("/api/status");
+    S.runs=S.status.runs||[];
+    if(S.mode==="live" && !S.replaying){
+      const cur=S.status.current||{};
+      S.summary=S.summary||{};
+      if(cur.id) S.summary=Object.assign({},S.summary,{prompt:cur.prompt,port:cur.port,limits:cur.limits,capabilities:cur.capabilities});
+      if(cur.capabilities) S.caps=cur.capabilities;
+      if(cur.start_utc) S.duration=Math.max(S.duration,0);
+    }
+    renderHeader(); renderRuns(); renderNumbers(); checklist();
+    const cur=S.status.current||{};
+    if(S.mode==="live" && !S.replaying && S.status.current_run && S.status.current_run!==S.run){
+      connectLive();
+    } else if(S.mode==="live" && !S.replaying && S.stream && cur.live===false && S.run===cur.id){
+      // run 结束：关流，按静态数据展示（仍可手动标记/回放）
+      try{S.stream.close();}catch(e){} S.stream=null;
+      loadSeries(S.run,false);
+    }
+  }catch(e){ /* 服务还没起 */ }
+}
+async function startReplay(runId){
+  if(S.stream){ try{S.stream.close();}catch(e){} S.stream=null; }
+  S.replaying=true; S.mode="replay"; S.run=runId; resetRun();
+  history.replaceState(null,"","?run="+encodeURIComponent(runId));
+  try{
+    await loadSeries(runId,true);
+    await ensureChunk(S.cursor,true);
+    updatePlayUI();
+  }catch(e){ toast("回放失败："+e.message); }
+}
+function updatePlayUI(){
+  const btn=$("btn-play"), sel=$("sel-speed");
+  btn.classList.toggle("hide",!S.replaying);
+  sel.classList.toggle("hide",!S.replaying);
+  btn.textContent=S.playing?"⏸ 暂停":"▶ 播放";
+  if(S.replaying){
+    $("cursor-chip").textContent=(S.playing?"播放 ":"回放 ")+clock(S.cursor||0)+(S.playing?" · "+S.speed+"×":" · 暂停");
+  }else{
+    $("cursor-chip").textContent=S.cursor!=null?("定位 "+clock(S.cursor)+(S.paused?" · 冻结":"")):"实时";
+  }
+  $("btn-live").classList.toggle("on",!S.replaying&&!S.paused);
+}
+function updateCursorChip(){ updatePlayUI(); }
+function togglePlay(){
+  if(!S.replaying) return;
+  if(S.playing){ S.playing=false; S.paused=true; }
+  else{
+    if(S.cursor==null || S.cursor>=S.duration-0.02) S.cursor=0;
+    S.playing=true; S.paused=false; S.tickLast=performance.now()/1000; S.lastCam=0;
+    jumpFrame();
+  }
+  updatePlayUI(); schedule();
+}
+function tickPlayback(ts){
+  if(!S.replaying || !S.playing) return;
+  const t=ts/1000;
+  if(!S.tickLast) S.tickLast=t;
+  const dt=Math.min(0.5,Math.max(0,t-S.tickLast));
+  S.tickLast=t;
+  S.cursor=Math.min(S.duration||0,(S.cursor||0)+dt*(S.speed||1));
+  if(S.cursor>=(S.duration||0)-1e-6){
+    S.cursor=S.duration; S.playing=false; S.paused=true; updatePlayUI();
+  }
+  if(t-(S.lastCam||0)>0.12){ S.lastCam=t; jumpFrame(); }
+  if(t-(S._lastTickRender||0)>0.10){ S._lastTickRender=t; renderAll(); }
+}
+
+/* ---------- 主循环 ---------- */
+function schedule(){ const t=performance.now(); if(t-S.lastRender>100){ S.lastRender=t; requestAnimationFrame(renderAll); } }
+function renderAll(){
+  renderHeader(); renderNumbers(); checklist(); drawChunk(); drawTimeline();
+  plotBudget(); plotErr(); plotJoints(); renderEvents(); updateCursorChip();
+}
+function loop(ts){ tickPlayback(ts); requestAnimationFrame(loop); }
+
+/* ---------- 交互 ---------- */
+function bindUI(){
+  $("btn-live").onclick=()=>{ if(S.replaying){ connectLive(); } else { S.paused=false; S.cursor=null; updatePlayUI(); jumpFrame(); } };
+  $("btn-mark").onclick=()=>doMark();
+  $("btn-export").onclick=doExport;
+  $("btn-runs").onclick=()=>refreshStatus();
+  $("btn-play").onclick=togglePlay;
+  $("sel-speed").onchange=(ev)=>{ S.speed=parseFloat(ev.target.value)||1; updatePlayUI(); };
+  $("btn-heat").onclick=()=>{ S.heatMode=S.heatMode==="row"?"global":"row"; drawChunk(); };
+  $("btn-static").onclick=()=>{
+    if(S.staticOptions.length<2) return;
+    const idx=S.staticOptions.indexOf(S.staticObs);
+    S.staticObs=S.staticOptions[(idx+1)%S.staticOptions.length];
+    S.camObs={};
+    updateStaticUI();
+    jumpFrame();
+    schedule();
+  };
+  $("timeline").onclick=(ev)=>{
+    const cv=$("timeline"); const r=cv.getBoundingClientRect();
+    const dur=S.replaying?Math.max(1,S.duration):Math.max(1,(S.infs.length?S.infs[S.infs.length-1].rel:0));
+    const x=Math.max(0,Math.min(1,(ev.clientX-r.left-8)/Math.max(1,r.width-16)));
+    S.playing=false; S.cursor=x*dur; S.paused=true; updatePlayUI(); jumpFrame(); schedule();
+  };
+  const chunkCv=$("plot-chunk");
+  chunkCv.addEventListener("mousemove",(ev)=>{
+    const g=S._chunkGeom, tip=$("chunk-tip");
+    if(!g||!S.chunk){ tip.classList.remove("show"); return; }
+    const r=chunkCv.getBoundingClientRect();
+    const x=ev.clientX-r.left, y=ev.clientY-r.top;
+    const s=Math.floor((x-g.left)/g.gx), d=Math.floor((y-g.top)/g.gy);
+    if(s<0||s>=g.steps||d<0||d>=g.dims){ tip.classList.remove("show"); return; }
+    const v=S.chunk[s][d];
+    if(v==null){ tip.classList.remove("show"); return; }
+    const tag=(g.execStart!=null&&g.execEnd!=null)
+      ?(s>=g.execStart&&s<g.execEnd?" · 已执行":(s<g.execStart?" · 前缀":" · 未执行"))
+      :"";
+    tip.textContent=`第 ${s} 步 · ${JNAMES[d]||("J"+d)} · ${Number(v).toFixed(3)}${tag}`;
+    tip.style.left=x+"px"; tip.style.top=(y-6)+"px";
+    tip.classList.add("show");
+  });
+  chunkCv.addEventListener("mouseleave",()=>$("chunk-tip").classList.remove("show"));
+  document.addEventListener("keydown",(ev)=>{
+    if(ev.target&&/input|textarea|select/i.test(ev.target.tagName)) return;
+    if(ev.key==="m"||ev.key==="M"){ ev.preventDefault(); doMark(); }
+    else if(ev.key===" "){ ev.preventDefault();
+      if(S.replaying){ togglePlay(); }
+      else { S.paused=!S.paused; if(!S.paused) S.cursor=null; updatePlayUI(); jumpFrame(); schedule(); }
+    }
+    else if(ev.key==="ArrowLeft"){ S.playing=false; S.paused=true; S.cursor=Math.max(0,(S.cursor??curRel())-1); updatePlayUI(); jumpFrame(); schedule(); }
+    else if(ev.key==="ArrowRight"){ S.playing=false; S.paused=true; S.cursor=Math.min(S.duration||curRel()+1,(S.cursor??curRel())+1); updatePlayUI(); jumpFrame(); schedule(); }
+    else if(ev.key==="Escape"){ if(S.replaying) connectLive(); else { S.paused=false; S.cursor=null; updatePlayUI(); } }
+  });
+  window.addEventListener("resize",()=>schedule());
+}
+function curRel(){ return S.infs.length?S.infs[S.infs.length-1].rel:0; }
+function doMark(){
+  if(!S.run){ toast("还没有 run"); return; }
+  const rel=S.cursor!=null?S.cursor:curRel();
+  const note=prompt("标记备注（可留空）", "")||"";
+  fetch("/api/mark",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({run:S.run,rel,note})})
+    .then(r=>r.json()).then(d=>{ if(d.ok){ S.marks.push(d.mark); toast("已标记 "+clock(rel)+"（时间轴金色三角）"); renderEvents(); schedule(); } })
+    .catch(()=>toast("标记失败"));
+}
+async function doExport(){
+  if(!S.run){ toast("还没有 run"); return; }
+  try{
+    const txt=await (await fetch("/api/export?run="+encodeURIComponent(S.run))).text();
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(txt);
+      toast("摘要已复制：状态/延迟/循环/限位/actuations");
+    } else { window.prompt("复制摘要", txt); }
+  }catch(e){ toast("导出失败"); }
+}
+function renderSelChips(){
+  const box=$("selchips");
+  if(box.children.length) return;
+  JNAMES.forEach((name,j)=>{
+    const b=document.createElement("button"); b.textContent=name;
+    b.className=S.sel.includes(j)?"on":"";
+    b.onclick=()=>{ if(S.sel.includes(j)) S.sel=S.sel.filter(x=>x!==j); else S.sel.push(j);
+      if(!S.sel.length) S.sel=[j];
+      [...box.children].forEach((c,idx)=>c.classList.toggle("on",S.sel.includes(idx)));
+      $("joint-chip").textContent=S.sel.length+" 通道"; schedule(); };
+    box.appendChild(b);
+  });
+  $("joint-chip").textContent=S.sel.length+" 通道";
+}
+
+async function boot(){
+  bindUI(); renderSelChips();
+  const p=new URLSearchParams(location.search);
+  const runParam=p.get("run");
+  if(runParam){ S.mode="replay"; S.replaying=true; }
+  await refreshStatus();
+  if(runParam){ await startReplay(runParam); }
+  else { connectLive(); }
+  setInterval(refreshStatus,2000);
+  requestAnimationFrame(loop);
+}
+boot();
+</script>
+</body>
+</html>

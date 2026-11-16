@@ -1,0 +1,20 @@
+# openpi-xpu-client:v0.2.1 = v0.2.0 with one file replaced: /usr/bin/zenoh-bridge-ros2dds is 1.9.0 with
+# route-lifecycle-p1.patch (Q16; build_bridge.sh, README.md). Every other layer, library, ENV and the entrypoint are
+# v0.2.0's. Built by build_image.sh from a context holding this file and the binary; `--version` cannot tell the two
+# binaries apart (both print v1.9.0), so the binary is checked by its sha256 here and labelled.
+FROM openpi-xpu-client:v0.2.0@sha256:bdf073743a5526899f47dfe653fc06caeac3c26e72cff98d178dc07c7cc9534c
+
+ARG BRIDGE_SHA256=778d784a471879432463992aa9577849f48e2c19959e46768b9b4584747f7c89
+ARG PATCH_SHA256=fd2e037d7fcf5d2515476b460bb362a4941939edc2a19f6736aebf51c2a80063
+
+COPY --chmod=755 zenoh-bridge-ros2dds-1.9.0-p1 /usr/bin/zenoh-bridge-ros2dds
+RUN set -eu; \
+    echo "${BRIDGE_SHA256}  /usr/bin/zenoh-bridge-ros2dds" | sha256sum -c; \
+    zenoh-bridge-ros2dds --version | grep -F "v1.9.0"; \
+    printf 'zenoh-bridge-ros2dds=1.9.0+q16p1 sha256=%s patch=route-lifecycle-p1.patch patch-sha256=%s\n' \
+        "${BRIDGE_SHA256}" "${PATCH_SHA256}" >> /opt/openpi-client/TOOLCHAIN
+
+LABEL org.opencontainers.image.version="v0.2.1" \
+      zenoh.bridge-ros2dds="1.9.0+q16p1" \
+      zenoh.bridge-ros2dds.sha256="${BRIDGE_SHA256}" \
+      zenoh.bridge-ros2dds.patch-sha256="${PATCH_SHA256}"
