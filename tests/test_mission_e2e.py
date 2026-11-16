@@ -22,8 +22,8 @@ ROBOT_TOPICS_FAKE = """import json, sys
 sys.stdin.read()
 print(json.dumps({"/left_arm/joint_states": {"declared": True, "hz": 50.0, "value": {"position": [0.1] * 7}},
                   "/right_arm/joint_states": {"declared": True, "hz": 0.0, "value": None},
-                  "/api/current_mode": {"declared": True, "hz": 10.0, "value": {"enable_left_arm": True, "left_arm_control_mode": 1,
-                                                                                "enable_right_arm": True, "right_arm_control_mode": 1}}}))
+                  "/api/current_mode": {"declared": True, "hz": 1.0, "value": {"data": json.dumps({"enable_left_arm": True,
+                      "left_arm_control_mode": 1, "enable_right_arm": False, "right_arm_control_mode": 1})}}}))
 """
 
 
@@ -135,6 +135,7 @@ class RobotCheck(_MissionServer, unittest.TestCase):
         self.assertEqual(rows["右臂关节  /right_arm/joint_states"]["level"], "bad")       # declared, no data
         self.assertIn("没有数据", rows["右臂关节  /right_arm/joint_states"]["value"])
         self.assertEqual(rows["左臂使能 / 控制模式"]["level"], "ok")
+        self.assertEqual(rows["右臂使能 / 控制模式"]["level"], "warn")
         self.assertEqual(rows[f"B70 → 机器人 192.168.31.218"]["level"], "ok")
         self.assertEqual(set(d["summary"]), {"ok", "warn", "bad"})
         self.assertEqual(self.commands("arm") + self.commands("vla") + self.commands("down") + self.commands("move"), [])

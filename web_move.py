@@ -1179,7 +1179,7 @@ print(json.dumps(out))
 ROBOT_TOPICS = [("/left_arm/joint_states", "左臂关节"), ("/right_arm/joint_states", "右臂关节"),
                 ("/left_gripper/joint_states", "左夹爪"), ("/right_gripper/joint_states", "右夹爪"),
                 ("/left_arm/current_ee_pose", "左臂末端位姿"), ("/right_arm/current_ee_pose", "右臂末端位姿"),
-                ("/api/current_mode", "控制模式"), ("/fsm_state", "状态机"), ("/chassis/odom", "底盘里程计")]
+                ("/api/current_mode", "控制模式"), ("/fsm_state", "状态机"), ("/chassis/joint_states", "底盘轮子")]
 
 
 def _check_cmd(cmd, timeout, stdin=None):
@@ -1240,6 +1240,11 @@ def robot_check():
                                              if t != "/fsm_state" else "状态机话题可能只在变化时发布")
             add("机器人数据（实时 2 秒）", f"{label}  {t}", level, text, d.get("error") or hint)
         mode = (topics.get("/api/current_mode") or {}).get("value")
+        if isinstance(mode, dict) and isinstance(mode.get("data"), str):     # std_msgs/String carrying JSON
+            try:
+                mode = json.loads(mode["data"])
+            except ValueError:
+                pass
         if isinstance(mode, dict):
             for side, cn in (("left", "左臂"), ("right", "右臂")):
                 en, cm = mode.get(f"enable_{side}_arm"), mode.get(f"{side}_arm_control_mode")
