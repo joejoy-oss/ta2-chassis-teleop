@@ -242,6 +242,12 @@ class GraspOnlyRetry(_MissionServer, unittest.TestCase):
         self.assertIn('id="vlaattempts"', html)
         self.assertIn('id="vlalive"', html)
         self.assertIn('id="missionlive"', html)
+        flow = urlopen(self.url + "/grasp-flow", timeout=5).read().decode()
+        self.assertIn('href="/grasp-flow"', html)
+        for text in ("抓取流程图", "① 复位", "② 取帧", "③ VLA 推理执行", "✓ 成功", "✗ 空夹", "✗ 夹着不抬", "抬高 ≥ 4 cm",
+                     "本次最多 4 秒", "右 ≥ -0.0385 rad"):              # ATTEMPT_S=4 in this test env
+            self.assertIn(text, flow)
+        self.assertNotIn("__", flow.split("<script>")[0])
         self.assertIn("flow:'grasp'", html)
 
 

@@ -1133,6 +1133,86 @@ class _Host:
 
 mission = mission_module.Mission(sys.modules.get(__name__) or _Host())
 
+GRASP_FLOW_PAGE = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>抓取流程图</title><style>
+:root{--bg:#f5f5f4;--fg:#252729;--muted:#64686c;--panel:#fff;--line:#dcdedc;--accent:#455c68;--ok:#2e7d32;--bad:#c62828;--hi:#fff4d6}
+@media (prefers-color-scheme:dark){:root{--bg:#17191a;--fg:#e5e7e8;--muted:#a3a9ad;--panel:#202426;--line:#3e4548;--accent:#a7bdc8;--ok:#8fd19e;--bad:#ff8a80;--hi:#3a3320}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif}
+main{max-width:780px;margin:0 auto;padding:16px}h1{font-size:20px;margin:4px 0}a{color:var(--accent)}
+.sub{color:var(--muted);margin:0 0 12px}#now{margin:8px 0 14px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel)}
+.box{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:0 0 26px}
+.box:not(.last)::after{content:'↓';position:absolute;left:50%;bottom:-24px;transform:translateX(-50%);color:var(--muted);font-size:18px}
+.box h2{font-size:15px;margin:0 0 2px}.box p,.box ul{margin:2px 0}.box ul{padding-left:18px}.box small{color:var(--muted)}
+.loop{border:2px dashed var(--accent);border-radius:14px;padding:12px 12px 2px;margin:0 0 26px;position:relative}
+.loop>.tag{position:absolute;top:-12px;left:14px;background:var(--bg);padding:0 6px;color:var(--accent);font-weight:700}
+.loop::after{content:'↓';position:absolute;left:50%;bottom:-24px;transform:translateX(-50%);color:var(--muted);font-size:18px}
+.box.on{background:var(--hi);border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:0 0 26px}
+.grid .box{margin:0}.grid .box::after{display:none}
+.ok{border-left:5px solid var(--ok)}.bad{border-left:5px solid var(--bad)}.ok h2{color:var(--ok)}.bad h2{color:var(--bad)}
+.ends{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}.ends .box{margin:0}.ends .box::after{display:none}
+.side{margin-top:14px}.side .box::after{display:none}
+</style></head><body><main>
+<p><a href="/">← 返回 TA2 遥控</a></p>
+<h1>抓取流程图</h1>
+<p class="sub">大按钮「开始抓取」、全流程第 3 步、语音模块 7.2 都走这同一套流程（同一份代码）。图中数字直接取自当前运行的代码。</p>
+<div id="now" role="status">当前：未在抓取</div>
+
+<div class="box"><h2>入口</h2>
+<p>大按钮「开始抓取」（最多 5 / 3 / 1 次）· 全流程第 3 步（到达红区停 __PAUSE__ 秒后，最多 __ATTEMPTS__ 次）· 语音模块 7.2</p></div>
+
+<div class="loop"><span class="tag">第 i 次尝试（i = 1 … N）</span>
+<div class="box" data-phase="reset"><h2>① 复位</h2><p>手臂回起始姿态，两只夹爪张开（约 6 秒）。每一次尝试都会先复位。</p></div>
+<div class="box" data-phase="probe"><h2>② 取帧</h2><p>读取一帧相机图像和关节状态，确认数据正常。</p></div>
+<div class="box" data-phase="policy"><h2>③ VLA 推理执行</h2><p>按选中的模型推理并执行动作，本次最多 __LIMIT__ 秒，速度上限 1.0 rad/s。</p>
+<small>启动后 8 秒内没收到相机 / 关节数据：什么都不动，自动重来一次。</small></div>
+<div class="box last" data-phase="judge"><h2>④ 边执行边判定（左右手各一份，每帧一次）</h2><ul>
+<li>夹爪在这一次里还没张开过（≤ __OPEN__ rad）→ 不判定；每次重新张开，计时全部清零</li>
+<li><b>夹住</b> = 夹爪用力（力 ≤ __EFF__）且停在空夹位置以上（右 ≥ __HR__ rad，左 ≥ __HL__ rad），实体、薄片都算</li>
+<li><b>空夹</b> = 夹爪用力且合拢到空夹位置以下</li>
+<li>手臂数据中断或过期 → 所有计时清零</li></ul></div>
+</div>
+
+<div class="grid">
+<div class="box ok" data-phase="success"><h2>✓ 成功</h2><p>夹住，且比第一次合拢时<b>抬高 ≥ __LIFT__ cm</b>，连续保持 __SUCC__ 秒</p><small>→ 立即停止 VLA，原地保持夹紧</small></div>
+<div class="box bad"><h2>✗ 空夹</h2><p>空夹持续 __EMPTY__ 秒（另一只手正夹着东西时不算）</p><small>→ 立即停止 VLA → 下一次</small></div>
+<div class="box bad"><h2>✗ 夹着不抬</h2><p>夹住超过 __NOLIFT__ 秒，仍没满足成功条件</p><small>→ 立即停止 VLA → 下一次</small></div>
+<div class="box bad"><h2>✗ 到时 / 出错</h2><p>__LIMIT__ 秒到时没抓住，或 VLA 脚本出错退出</p><small>→ 下一次</small></div>
+</div>
+
+<div class="ends">
+<div class="box ok"><h2>抓住之后</h2><p>大按钮：结束，原地夹紧不动<br>全流程：进入第 4 步收臂（保持夹紧）<br>语音模块：进入 7.3 收臂</p></div>
+<div class="box bad"><h2>N 次都没抓住</h2><p>手臂回起始姿态、张开夹爪，本次任务失败</p></div>
+</div>
+
+<div class="side"><div class="box"><h2>任何时候</h2><p>急停 / 停止 → 立即中止 · 手臂数据丢失、底盘断开、退出 API 模式 → 任务失败</p></div></div>
+</main><script>
+const NOW=document.getElementById('now');
+const PH={starting:'准备中',reset:'① 复位中',probe:'② 取帧中',policy:'③ VLA 推理执行中',policy_retry:'③ 启动没收到数据，重来一次',stopping:'判定已出，正在停止 VLA',ended:'本次已结束'};
+async function poll(){
+  let L=null,m={};
+  try{m=(await (await fetch('/api/v1/state',{cache:'no-store'})).json()).mission||{};L=m.live}catch(e){NOW.textContent='读取状态失败';return}
+  const running=L&&m.active&&L.phase!=='ended';
+  document.querySelectorAll('[data-phase]').forEach(b=>{const p=b.dataset.phase;
+    b.classList.toggle('on',!!running&&(p===L.phase||(p==='policy'&&L.phase==='policy_retry')||(p==='judge'&&L.phase==='policy')||(p==='success'&&L.phase==='stopping'&&(L.note||'').startsWith('抓住'))))});
+  NOW.textContent=running?'当前：第 '+L.attempt+'/'+L.attempts+' 次 · '+(PH[L.phase]||L.phase)+' · 本次 '+Math.round(L.elapsed_s||0)+' 秒':
+    L?'最近一次：第 '+L.attempt+'/'+L.attempts+' 次 · '+(L.verdict==='succeeded'?'抓住（'+(L.hand==='left'?'左手':'右手')+'）':'未抓住')+(m.result?' · 任务结果：'+m.result:''):'当前：未在抓取';
+}
+poll();setInterval(poll,700);
+</script></body></html>"""
+
+
+def grasp_flow_page():
+    m = mission_module
+    vals = {"__PAUSE__": m.ARRIVE_PAUSE, "__ATTEMPTS__": m.ATTEMPTS, "__LIMIT__": m.ATTEMPT_S, "__OPEN__": m.HOLD_POS_MAX,
+            "__EFF__": m.HOLD_EFF_MAX, "__HR__": round(m.hold_threshold("right"), 4), "__HL__": round(m.hold_threshold("left"), 4),
+            "__LIFT__": m.LIFT_MIN * 100, "__SUCC__": m.HOLD_PERSIST, "__EMPTY__": m.EMPTY_PERSIST, "__NOLIFT__": m.NO_LIFT_S}
+    page = GRASP_FLOW_PAGE
+    for k, v in vals.items():
+        page = page.replace(k, f"{v:g}")
+    return page
+
+
 PAGE = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
@@ -1233,7 +1313,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
 @media (prefers-reduced-motion:reduce){.listen .mic::before,.listen .mic::after,.listen .bars i{animation:none}}
 </style></head><body>
 <header><div class="bar">
-  <div class="identity"><h1>TA2 遥控</h1><a href="/api-docs" target="_blank" rel="noopener">接口文档 / 测试</a><span id="connection" class="connection" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-text">连接中…</span></span><span id="mode" class="badge">模式未知</span></div>
+  <div class="identity"><h1>TA2 遥控</h1><a href="/api-docs" target="_blank" rel="noopener">接口文档 / 测试</a><a href="/grasp-flow" target="_blank" rel="noopener">抓取流程图</a><span id="connection" class="connection" role="status"><span class="dot" aria-hidden="true"></span><span id="connection-text">连接中…</span></span><span id="mode" class="badge">模式未知</span></div>
   <button id="estop" class="estop" title="急停底盘、手臂与抓取任务（Esc）">急停</button>
   <div class="activity"><span>当前活动</span><span id="status" role="status">正在连接机器人…</span></div>
 </div></header>
@@ -1786,6 +1866,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.api_error(APIError(500, "INTERNAL_ERROR", str(e)))
         if path == "/":
             self._send(200, PAGE, "text/html")
+        elif path == "/grasp-flow":
+            self._send(200, grasp_flow_page(), "text/html")
         elif path == "/api-docs":
             with open(os.path.join(os.path.dirname(__file__), "api_docs.html"), encoding="utf-8") as api_page:
                 self._send(200, api_page.read(), "text/html")
