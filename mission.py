@@ -281,6 +281,11 @@ class Mission:
         out["active"] = self.active
         pause = out["pause_until"]
         out["pause_left_s"] = max(0, pause - time.time()) if pause else 0
+        live = out.get("live")
+        if live:
+            now = time.time()
+            live["elapsed_s"] = round((live["ended"] or now) - live["started"], 1)
+            live["phase_s"] = round((live["ended"] or now) - live["phase_since"], 1)
         return out
 
     def abort(self):
@@ -306,8 +311,10 @@ class Mission:
                                                           for s in SIDES})
                 except (OSError, ValueError):
                     pass
+            hands = {}
             for side in SIDES:
                 self.detectors[side] = grasp_update(self.detectors.get(side), frame[side], frame["t"], side)
+                hands[side] = self._hand_view(self.detectors[side], frame[side], frame["t"], side)
                 if self.detectors[side]["success"] and self.success_hand is None:
                     self.success_hand = side
                 elif self.attempt_fail is None and self.success_hand is None:
@@ -316,6 +323,9 @@ class Mission:
                         self.attempt_fail = f"{side} gripper closed on nothing"
                     elif self.detectors[side]["no_lift"]:
                         self.attempt_fail = f"{side} gripper holding but not lifted within {NO_LIFT_S:g} s"
+            live = self.state.get("live")
+            if live:
+                live["hands"] = hands          # replaced whole: snapshot() may be copying the old one
         if self.carrying:
             if holding(frame[self.state["hand"]], self.state["hand"]):
                 self.drop_since = None
@@ -323,6 +333,17 @@ class Mission:
                 self.drop_since = frame["t"]
             elif frame["t"] - self.drop_since >= DROP_PERSIST:
                 self.dropped = True
+
+    @staticmethod
+    def _hand_view(d, sample, t, side):
+        """What the grasp detector currently sees for one hand (for the page; no decisions here)."""
+        pos, eff, z = sample.get("grip_pos"), sample.get("grip_eff"), sample.get("ee_z")
+        lift = (z - d["z_at_close"]) * 100 if d.get("z_at_close") is not None and finite(z) else None
+        age = lambda k: round(t - d[k], 1) if d.get(k) is not None else 0
+        return {"pos": round(pos, 3) if finite(pos) else None, "eff": round(eff, 2) if finite(eff) else None,
+                "grip": classify_grip(sample, side), "armed": bool(d.get("armed")),
+                "lift_cm": round(lift, 1) if lift is not None else None,
+                "hold_s": age("hold_since"), "good_s": age("since"), "empty_s": age("empty_since")}
 
     def _new_monitor(self):
         self.watching = False
@@ -387,7 +408,7 @@ class Mission:
                       "attempt": 0, "attempts": cfg["attempts"], "pause_until": None,
                       "result": None, "attempt_results": [], "durations": {},
                       "config": {k: cfg.get(k) for k in ("model", "model_name", "port", "prompt", "rtc", "flow")},
-                      "flow": cfg.get("flow", "v1"),
+                      "flow": cfg.get("flow", "v1"), "live": None,
                       "voice": None if cfg.get("flow", "v1") in ("v1", "grasp") else {
                           "hand": None, "attempt_results": [],
                           "steps": [{"id": i, "name": n, "uses": u, "status": "pending", "detail": ""}
@@ -468,7 +489,28 @@ class Mission:
     def _output(self, p):
         for line in p.stdout:
             self._event("output", text=line.rstrip())
+            if self.detecting:
+                self._phase_from(line)
         p.stdout.close()
+
+    # vla_run.sh output -> attempt phase shown on the page (reset -> probe -> policy)
+    PHASE_MARKS = (("Arms: start", "reset"), ("Starting GStreamer pipeline", "probe"),
+                   ('"observation_ready"', "policy"), ("retrying once with a fresh process", "policy_retry"))
+
+    def _phase(self, name, note=None):
+        live = self.state.get("live")
+        if live and live["phase"] != name:
+            live.update(phase=name, phase_since=time.time(), note=note if note is not None else live["note"])
+
+    def _phase_from(self, line):
+        live = self.state.get("live")
+        if not live or live["phase"] in ("stopping", "ended"):
+            return
+        for mark, name in self.PHASE_MARKS:
+            if mark in line and not (name == "probe" and live["phase"] not in ("reset", "starting")):
+                self._phase(name)
+        if line.startswith("startup: waiting for live data"):
+            live["note"] = line.strip()[:160]
 
     def _stop_command(self, kind):
         # Killing docker-exec locally does not stop its container-side process.
@@ -515,10 +557,12 @@ class Mission:
                     return rc, (self.success_hand if attempt else None)
                 if attempt and self.success_hand:
                     hand = self.success_hand
+                    self._phase("stopping", "抓住了，正在停止 VLA")
                     self.detecting = False
                     self._stop_command("vla")
                     return self.command.returncode, hand
                 if attempt and self.attempt_fail:          # empty grasp / no lift: do not wait for the time limit
+                    self._phase("stopping", self.attempt_fail)
                     self.detecting = False
                     self._stop_command("vla")
                     return self.command.returncode, None
@@ -553,6 +597,14 @@ class Mission:
             self.detecting = True
             tag = f"{prefix}_{i}"
             entry = {"attempt": i, "tag": tag, "result": "running", "hand": None}
+            began = time.time()
+            self.state["live"] = {"attempt": i, "attempts": cfg["attempts"], "phase": "starting", "phase_since": began,
+                                  "started": began, "ended": None, "note": "", "verdict": None, "hand": None,
+                                  "hands": {}, "elapsed_s": 0, "phase_s": 0,
+                                  "rules": {"limit_s": ATTEMPT_S, "lift_cm": LIFT_MIN * 100, "success_s": HOLD_PERSIST,
+                                            "empty_s": EMPTY_PERSIST, "no_lift_s": NO_LIFT_S,
+                                            "hold_min": {s: round(hold_threshold(s), 4) for s in SIDES},
+                                            "open_above": HOLD_POS_MAX, "effort_max": HOLD_EFF_MAX}}
             results.append(entry)
             self._event("attempt_start", **entry)
             try:
@@ -560,13 +612,19 @@ class Mission:
                                          kind="vla", attempt=True,
                                          env={**os.environ, "PROMPT": cfg["prompt"], "PORT": str(cfg["port"]), "RESET": "1",
                                               "RTC": "1" if cfg.get("rtc") else "0"})
-                entry.update(result="succeeded" if hand else "failed", hand=hand, returncode=rc,
-                             reason=None if hand else (self.attempt_fail or "time limit without a grasp"))
+                reason = None if hand else (self.attempt_fail or ("time limit without a grasp" if rc in (0, None)
+                                                                  else f"VLA script exited {rc} without a grasp"))
+                entry.update(result="succeeded" if hand else "failed", hand=hand, returncode=rc, reason=reason)
             except Exception:
                 entry.update(result="aborted" if self.cancel.is_set() else "failed")
                 raise
             finally:
                 self.detecting = False
+                entry["seconds"] = round(time.time() - began, 1)
+                live = self.state["live"]
+                live.update(ended=time.time(), verdict=entry["result"], hand=entry["hand"],
+                            note=entry.get("reason") or live["note"])
+                self._phase("ended")
                 self._event("attempt_end", **entry)
             if hand:
                 return hand

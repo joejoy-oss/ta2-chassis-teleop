@@ -1213,6 +1213,13 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
 #voicesub{margin:4px 0 0;padding-left:8px;list-style:none;font-weight:400;background:none}
 #voicesub li{margin:2px 0}#voicesub small{color:var(--muted,#888)}
 #voicesub .sub-running{color:var(--accent);font-weight:700}#voicesub .sub-failed{color:#c62828;font-weight:700}
+.glive{margin:8px 0;padding:10px 12px;border:1px solid var(--line,#ccc);border-radius:8px;font-size:14px;line-height:1.55}
+.glive .gh{font-weight:700}.glive .gp{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+.glive .gp span{padding:1px 8px;border-radius:10px;border:1px solid var(--line,#ccc);opacity:.6}
+.glive .gp .on{opacity:1;border-color:var(--accent);color:var(--accent);font-weight:700}.glive .gp .ok{opacity:1;color:#2e7d32;border-color:#2e7d32}
+.glive .gp .bad{opacity:1;color:#c62828;border-color:#c62828;font-weight:700}
+.glive .hand{margin:2px 0}.glive .hand b{display:inline-block;min-width:3em}.glive .warn{color:#c62828;font-weight:700}.glive .good{color:#2e7d32;font-weight:700}
+.glive .hist{margin-top:6px;color:var(--muted,#888)}.glive .hist .ok{color:#2e7d32}.glive .hist .bad{color:#c62828}
 #missionsteps .mk{font-weight:700}#missionsteps .mk-done{color:#2e7d32}#missionsteps .mk-failed{color:#c62828}#missionsteps .mk-running{color:var(--accent)}
 #voicesub .sub-succeeded{color:#2e7d32}#voicesub .sub-skipped{opacity:.55}
 .listen{display:flex;align-items:center;gap:10px;margin:6px 0;padding:8px 10px;border-radius:8px;background:rgba(229,57,53,.1);color:#c62828;font-weight:700}
@@ -1239,6 +1246,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
     <button id="missionvoice" disabled>单独运行第 7 步</button>
     <button id="missionhandoff" disabled title="与第 7 步的 7.4–7.7 完全相同：用当前夹着东西的那只手前伸 10 cm → 下降 10 cm → 松开 → 确认已松开。需要正好一只手夹着东西；全流程里这之前会先收臂（起始姿态·保持夹爪）">单独放下（前伸+下降+松开）</button>
     <ol id="missionsteps"><li data-step="preflight">预检</li><li data-step="g2r">绿→红</li><li data-step="grasp">抓取 0/5</li><li data-step="stow">收臂</li><li data-step="r2g">红→绿</li><li data-step="place">放下</li><li data-step="voice"><span>语音交互模块（全流程 v2）</span><ol id="voicesub"></ol></li></ol>
+    <div id="missionlive" class="glive" role="status" hidden></div>
     <p id="missionstatus" class="status-line" role="status">尚未运行</p>
   </div></section>
   <section class="card"><div class="body">
@@ -1253,6 +1261,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
       <progress id="vlaprogress" max="60" value="0" aria-label="抓取运行进度" aria-describedby="vlaelapsed"></progress>
     </div>
     <p class="status-line">上次：<span id="vlast">尚未运行</span></p>
+    <div id="vlalive" class="glive" role="status" hidden></div>
     <div class="arm-section">
       <div class="arm-controls"><h3>手臂</h3><button id="armstart" class="small" title="回到训练起始姿态，夹爪张开，约 10 秒" disabled>起始姿态</button><button id="armstarthold" class="small" title="回到训练起始姿态，正在夹着的夹爪保持夹紧（不松开），约 10 秒" disabled>起始姿态·保持夹爪</button><button id="armdown5" class="small" title="右臂末端竖直下降 5 cm，朝向不变，夹着的夹爪保持夹紧；每次按当前位置重新计算，最多降到末端 z = −0.40 m（不足 5 cm 时只降到下限），约 8 秒" disabled>右臂下降 5 cm</button><button id="armfwdleft" class="small" title="左臂末端沿直线向前 5 cm，朝向和夹爪不变；每次按当前位置重新计算，够不到或路径不安全时拒绝，约 8 秒" disabled>左臂前送 5 cm</button><button id="armfwdright" class="small" title="右臂末端沿直线向前 5 cm，朝向和夹爪不变；每次按当前位置重新计算，够不到或路径不安全时拒绝，约 8 秒" disabled>右臂前送 5 cm</button><button id="armopenright" class="small" title="张开右夹爪（全力张开），手臂保持当前姿态不动；夹着的东西会掉下来，约 3 秒" disabled>松开右爪</button><button id="armcloseright" class="small" title="闭合右夹爪（全力夹紧），手臂保持当前姿态不动，约 3 秒；之后保持夹紧" disabled>闭合右爪</button><button id="armraise" class="small" title="抬起手臂，约 8 秒" disabled>抬起</button><button id="armlower" class="small" title="返回抬起前的姿态，约 15 秒" disabled>放下</button></div>
       <p id="armst" class="status-line">尚未移动</p>
@@ -1343,7 +1352,7 @@ function uiText(value){
     ['not in API mode or chassis disabled (or mode unknown yet)','非 API 模式、底盘未启用或模式未知'],
     ['no fresh wheel feedback from the robot','尚未收到机器人最新轮速反馈'],['busy, path not started','忙碌中，路径未启动'],
     ['exited rc=','退出码：'],['time limit without a grasp','到时限仍未抓住'],['all grasp attempts failed; arms reset','全部尝试都未抓住，手臂已复位'],['grasped (left)','已抓住（左手），已停止'],['grasped (right)','已抓住（右手），已停止'],
-    ['no grasp (','未抓住，已提前结束（'],['left gripper closed on nothing','左爪空夹'],['right gripper closed on nothing','右爪空夹'],
+    ['no grasp (','未抓住，已提前结束（'],['left gripper closed on nothing','左爪空夹'],['without a grasp','，未抓住'],['VLA script exited','VLA 脚本退出码 '],['right gripper closed on nothing','右爪空夹'],
     ['left gripper holding but not lifted within','左爪夹着但未按时抬起：'],['right gripper holding but not lifted within','右爪夹着但未按时抬起：'],['before running the policy (see log)','，策略尚未运行（详见日志）'],
     ['FSM pause failed rc=','暂停失败，退出码：'],['FSM paused','已暂停'],['E-STOP','急停'],
     ['time_limit','达到时限'],['path done','路径已完成'],['corner pause','转角停留'],[' done, pausing ',' 已完成，停留 '],[' s before ',' 秒后开始 '],['run all: ','全部运行：'],['heartbeat timeout','心跳超时'],
@@ -1466,6 +1475,49 @@ function renderVoice(m){
     if(st.id==='7.1'&&st.status==='running'){const d=document.createElement('div');d.className='listen';d.setAttribute('role','status');
       d.innerHTML='<span class="mic">🎤</span><span>正在听，请说「小度小度，请把沙包给我」</span><span class="bars"><i></i><i></i><i></i><i></i></span>';li.appendChild(d)}});
 }
+// Grasp attempt internals (mission state "live", same for the big button, step 3 and step 7.2).
+function esc(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+const PHASES=[['reset','复位：回起始姿态、张开夹爪'],['probe','取帧：相机 + 关节'],['policy','VLA 推理执行'],['judge','判定结果']];
+const PHASE_NOW={starting:'准备中',reset:'复位中（回起始姿态、张开夹爪）',probe:'取帧中（相机 + 关节）',policy:'VLA 推理执行中',
+  policy_retry:'启动时没收到数据，自动重来一次',stopping:'判定已出，正在停止 VLA',ended:'本次已结束'};
+function handLine(name,h,r,side){
+  if(!h)return '<div class="hand"><b>'+name+'</b> 无读数</div>';
+  const n=x=>x==null?'–':Number(x).toFixed(2);
+  let t='<div class="hand"><b>'+name+'</b> 夹爪 '+n(h.pos)+' rad · 力 '+n(h.eff)+' · ';
+  if(!h.armed)t+='等待张开（张开前不判定）';
+  else if(h.grip==='open')t+='张开，等待合拢';
+  else if(h.grip==='empty')t+='<span class="warn">空夹 '+h.empty_s.toFixed(1)+' / '+r.empty_s+' s → 到时本次失败</span>';
+  else if(h.grip==='thin'||h.grip==='solid'){
+    t+='<span class="good">夹住（'+(h.grip==='solid'?'实体':'薄片')+'）</span> · 抬高 '+(h.lift_cm==null?'–':h.lift_cm.toFixed(1))+' / '+r.lift_cm+' cm';
+    t+=h.good_s>0?' · <span class="good">成功计时 '+h.good_s.toFixed(1)+' / '+r.success_s+' s</span>':' · 还没抬够';
+    t+=' · 已夹 '+h.hold_s.toFixed(1)+' / '+r.no_lift_s+' s（超时不抬判失败）';
+  }else if(h.grip==='closing')t+='合拢中（还没用力夹紧）';
+  else t+='无有效读数';
+  return t+'</div>';
+}
+function renderLive(el,L,show){
+  el.hidden=!(show&&L);if(el.hidden)return;
+  const r=L.rules||{},ended=L.phase==='ended',idx={starting:0,reset:0,probe:1,policy:2,policy_retry:2,stopping:3,ended:3}[L.phase]??0;
+  let h='<div class="gh">抓取内部状态 · 第 '+L.attempt+'/'+L.attempts+' 次 · '+esc(PHASE_NOW[L.phase]||L.phase)+
+    ' · 本次 '+(L.elapsed_s||0).toFixed(0)+' / '+r.limit_s+' s</div><div class="gp">';
+  PHASES.forEach(([k,label],i)=>{let c=i<idx?'ok':i===idx?'on':'';
+    if(i===3&&ended)c=L.verdict==='succeeded'?'ok':'bad';
+    let txt=label;if(i===3&&ended)txt=L.verdict==='succeeded'?'✓ 抓住（'+(L.hand==='left'?'左手':'右手')+'）':'✗ '+uiText(L.note||'失败');
+    h+='<span class="'+c+'">'+esc(txt)+'</span>'});
+  h+='</div>';
+  if(L.note&&!ended)h+='<div class="hand">'+esc(uiText(L.note))+'</div>';
+  if(!ended||L.hands.left){h+=handLine('左手',L.hands.left,r,'left')+handLine('右手',L.hands.right,r,'right')}
+  h+='<div class="hand"><small>规则：夹住 = 力 ≤ '+r.effort_max+' 且夹爪高于空夹位 · 成功 = 夹住并抬高 ≥ '+r.lift_cm+' cm 保持 '+r.success_s+' s · 空夹 '+r.empty_s+' s 或夹着 '+r.no_lift_s+' s 不抬 → 本次失败，进入下一次</small></div>';
+  el.innerHTML=h;
+}
+function renderHistory(el,m){
+  const list=m.attempt_results&&m.attempt_results.length?m.attempt_results:(m.voice&&m.voice.attempt_results)||[];
+  if(el.hidden||!list.length)return;
+  const d=document.createElement('div');d.className='hist';
+  d.innerHTML='历次尝试：'+list.map(a=>a.result==='succeeded'?'<span class="ok">#'+a.attempt+' ✓ '+(a.hand==='left'?'左手':'右手')+(a.seconds!=null?'（'+a.seconds.toFixed(0)+' s）':'')+'</span>':
+    a.result==='running'?'#'+a.attempt+' …':'<span class="bad">#'+a.attempt+' ✗ '+esc(uiText(a.reason||a.result))+(a.seconds!=null?'（'+a.seconds.toFixed(0)+' s）':'')+'</span>').join('　');
+  el.appendChild(d);
+}
 function updateMission(s){
   const m=s.mission||{},active=!!m.active;
   const mc=m.config,mm=document.getElementById('missionmodel');
@@ -1474,6 +1526,8 @@ function updateMission(s){
   missionBtn.disabled=active||!s.connected||s.mode_ok!==true||!!s.estop||!!s.moving||s.seq.length>0||!!s.arm||!!s.vla;
   missionBtn2.disabled=missionVoiceBtn.disabled=missionHandoffBtn.disabled=missionBtn.disabled;
   renderVoice(m);
+  const ml=document.getElementById('missionlive');renderLive(ml,m.live,!!m.live);renderHistory(ml,m);
+  const vl=document.getElementById('vlalive');renderLive(vl,m.live,!!m.live&&m.flow==='grasp');renderHistory(vl,m);
   document.querySelectorAll('#missionsteps li').forEach(el=>{
     el.classList.toggle('mission-current',el.dataset.step===m.step||(m.step==='handoff'&&el.dataset.step==='voice'));
     if(el.dataset.step==='grasp')el.textContent='抓取 '+(m.attempt||0)+'/'+(m.attempts||5);

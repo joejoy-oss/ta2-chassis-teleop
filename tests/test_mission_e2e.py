@@ -225,12 +225,23 @@ class GraspOnlyRetry(_MissionServer, unittest.TestCase):
         self.assertEqual((m["status"], m["result"], m["hand"], m["flow"]), ("succeeded", "grasped", "left", "grasp"), m)
         self.assertEqual([r["result"] for r in m["attempt_results"]], ["failed", "failed", "succeeded"])
         self.assertEqual(list(m["durations"]), ["preflight", "grasp"])
+        live = m["live"]                                   # internals shown on the page for the last attempt
+        self.assertEqual((live["attempt"], live["attempts"], live["phase"], live["verdict"], live["hand"]),
+                         (3, m["attempts"], "ended", "succeeded", "left"))
+        self.assertEqual(set(live["hands"]), {"left", "right"})
+        self.assertEqual(live["hands"]["left"]["grip"], "solid")
+        self.assertTrue(live["hands"]["left"]["armed"])
+        self.assertGreaterEqual(live["hands"]["left"]["lift_cm"], 4)
+        self.assertGreaterEqual(live["hands"]["left"]["good_s"], live["rules"]["success_s"])
+        self.assertTrue(all(isinstance(r["seconds"], float) for r in m["attempt_results"]))
         self.assertEqual(self.commands("arm"), [])          # no stow, no release: stops holding
         self.assertEqual(self.commands("down"), [])
         self.assertEqual(self.request("GET", "/api/v1/actions/" + aid)[1]["status"], "succeeded")
         from urllib.request import urlopen
         html = urlopen(self.url + "/", timeout=5).read().decode()
         self.assertIn('id="vlaattempts"', html)
+        self.assertIn('id="vlalive"', html)
+        self.assertIn('id="missionlive"', html)
         self.assertIn("flow:'grasp'", html)
 
 

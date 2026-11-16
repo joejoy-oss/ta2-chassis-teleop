@@ -96,6 +96,9 @@ def main():
                 print(json.dumps({"status": "time_limit", "actuations": 12, "error": None}), flush=True)
                 return
             event("vla_env", [os.environ["PROMPT"], os.environ["PORT"], os.environ["RESET"]])
+            for line in ("Arms: start. Checking robot state...", "INFO Starting GStreamer pipeline: udpsrc port=8890",
+                         '{"output_dir": "/outputs/x_probe", "observation_ready": true, "exit_code": 0}'):
+                print(line, flush=True)
             success_at = 3 if SCENARIO == "success_left" else 1
             if SCENARIO == "empty_fast":            # runs to its time limit unless the mission stops it
                 def stopped(*_):
