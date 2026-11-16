@@ -281,11 +281,35 @@ class GraspOnlyRetry(_MissionServer, unittest.TestCase):
         flow = urlopen(self.url + "/grasp-flow", timeout=5).read().decode()
         self.assertIn('href="/grasp-flow"', html)
         for text in ("抓取流程图", "<svg", "① 复位", "② 取帧", "③ VLA 推理执行", "夹住且抬高 ≥ 4 cm", "连续保持 1.5 s？",
-                     "空夹 ≠ 失败", "（卡住）？", "否：继续推理", "是：i = i + 1，重新复位", "最多 4 s（从第一个动作计时）",
+                     "空夹持续 2 s？", "停 VLA，张开该爪", "手臂原地不动、不复位", "否：继续推理", "是：i = i + 1，重新复位", "最多 4 s（从第一个动作计时）",
                      "右 ≥ -0.0385 rad"):                                   # ATTEMPT_S=4 in this test env
             self.assertIn(text, flow)
         self.assertNotIn("__", flow.split("<script>")[0])
         self.assertIn("flow:'grasp'", html)
+
+
+class EmptyReopensAndContinues(_MissionServer, unittest.TestCase):
+    scenario = "empty_fast"
+    extra_env = {"EMPTY_PERSIST": "1", "ATTEMPT_S": "9", "CONTINUE_MIN_S": "2"}
+
+    def test_empty_close_opens_that_gripper_and_keeps_inferring_without_reset(self):
+        aid = TA2Client(self.url).run_mission(attempts=1, flow="grasp")
+        self.wait_for(lambda: not self.status()["mission"]["active"], timeout=40)
+        m = self.status()["mission"]
+        self.assertEqual(m["status"], "failed", m)
+        a = m["attempt_results"][0]
+        self.assertGreaterEqual(a["reopens"], 1)
+        self.assertIn(a["reason"], ("left gripper closed on nothing", "time limit without a grasp"))  # last run: either
+        resets = [env[2] for env in self.commands("vla_env")]
+        self.assertEqual(resets[0], "1")                          # the attempt starts with a reset ...
+        self.assertEqual(set(resets[1:]), {"0"})                  # ... continuations do not reset
+        self.assertEqual(len(resets), a["reopens"] + 1)
+        opens = [c for c in self.commands("arm") if c == ["open_left"]]
+        self.assertEqual(len(opens), a["reopens"])                # only the empty gripper is opened, arm stays
+        tags = [c[0] for c in self.commands("vla")]
+        self.assertEqual(tags[1], tags[0] + "c1")
+        self.assertEqual(self.commands("arm")[-1], ["start"])     # all attempts failed -> reset at the end
+        self.assertEqual(self.request("GET", "/api/v1/actions/" + aid)[1]["status"], "failed")
 
 
 class GraspOnlyAllFail(_MissionServer, unittest.TestCase):

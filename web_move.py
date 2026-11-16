@@ -1377,17 +1377,17 @@ def grasp_flow_svg():
     p.append(_gf_edge([(cx, 400), (cx, 432)]))
     ys = [482, 622, 762, 902]
     texts = [[f"夹住且抬高 ≥ {LIFT} cm", f"连续保持 {SUCC} s？"],
-             ["空夹后 {} s 仍不张开".format(EMP), "（卡住）？"],
+             ["空夹持续 {} s？".format(EMP)],
              ["夹住超过 {} s".format(NOL), "仍未抬起？"],
              [f"{LIM} s 到时，", "或 VLA 脚本退出？"]]
     for i, (y, t) in enumerate(zip(ys, texts)):
         p.append(_gf_dec(cx, y, dw, dh, t))
         if i < 3:
             p.append(_gf_edge([(cx, y + dh / 2), (cx, ys[i + 1] - dh / 2)], "否", (cx + 10, y + dh / 2 + 22), "start"))
-    # an empty close is not a failure: the policy keeps running and may reopen to try again
-    p.append(f'<polyline class="edge dash" points="{cx + dw / 2},{ys[1]} 560,{ys[1]}"/>')
-    p.append(_gf_box(560, ys[1] - 46, 250, 92, ["空夹 ≠ 失败", "~VLA 不停，继续推理", "~模型张开重抓 → 计时清零", f"~{EMP} s 内一直闭合不动才算卡住"],
-                     "info"))
+    # empty close: open that gripper where the arm is (no reset) and keep inferring (joins the loop back to ③)
+    p.append(_gf_edge([(cx + dw / 2, ys[1]), (560, ys[1])], "是", (cx + dw / 2 + 14, ys[1] - 8), "start"))
+    p.append(_gf_box(560, ys[1] - 40, 250, 80, ["停 VLA，张开该爪", "~手臂原地不动、不复位", f"~本次剩余 ≥ {g(m.CONTINUE_MIN_S)} s 则接着推理"], "proc", "reopen"))
+    p.append(_gf_edge([(810, ys[1]), (835, ys[1])]))
     # success
     p.append(_gf_edge([(cx + dw / 2, ys[0]), (575, ys[0])], "是", (cx + dw / 2 + 14, ys[0] - 8), "start"))
     p.append(_gf_box(575, ys[0] - 33, 225, 66, ["停止 VLA，原地保持夹紧", "~抓取成功"], "ok", "success", rx=33))
@@ -1395,12 +1395,12 @@ def grasp_flow_svg():
     p.append(_gf_edge([(cx + dw / 2, ys[3]), (835, ys[3]), (835, 367), (bx + bw, 367)], "否：继续推理",
                       (cx + dw / 2 + 14, ys[3] - 10), "start"))
     # "yes" at checks 2-4 -> attempt failed
-    for y in ys[1:]:
+    for y in ys[2:]:
         p.append(f'<polyline class="edge" points="{cx - dw / 2},{y} 120,{y}"/>')
         p.append(f'<text class="lbl" x="{cx - dw / 2 - 12}" y="{y - 8}" text-anchor="end">是</text>')
     yf = 1000
-    p.append(_gf_edge([(120, ys[1]), (120, yf + 27), (bx, yf + 27)]))
-    p.append(_gf_box(bx, yf, bw, 54, ["停止 VLA，本次失败", "~记录原因：卡住 / 不抬 / 到时"], "bad", "fail"))
+    p.append(_gf_edge([(120, ys[2]), (120, yf + 27), (bx, yf + 27)]))
+    p.append(_gf_box(bx, yf, bw, 54, ["停止 VLA，本次失败", "~记录原因：不抬 / 到时 / 脚本退出"], "bad", "fail"))
     p.append(_gf_edge([(cx, yf + 54), (cx, 1090)]))
     yd = 1140
     p.append(_gf_dec(cx, yd, 260, 96, ["还有剩余次数？", "（i < N）"], "retry"))
@@ -1452,7 +1452,7 @@ main{max-width:900px;margin:0 auto;padding:16px}a{color:var(--hi)}h1{font-size:2
 <li><b>夹住</b>：夹爪用力（力 ≤ __EFF__）且停在空夹位置以上（右 ≥ __HR__ rad，左 ≥ __HL__ rad），实体、薄片都算</li>
 <li><b>空夹</b>：夹爪用力且合拢到空夹位置以下</li>
 <li>夹爪张开（&gt; __OPEN__ rad）后才开始判定；每次重新张开，计时全部清零</li>
-<li>空夹后模型自己张开重抓：继续推理，不打断</li>
+<li>空夹持续 __EMPTYS__ s：停 VLA，只张开这只爪（手臂原地、不复位），从当前位置接着推理；本次剩余不足 __CONTS__ s 时改为进入下一次（复位）</li>
 <li>另一只手正夹着东西时，这只手空夹不算失败</li></ul></div>
 <div class="note"><h2>抓住之后</h2><ul>
 <li>大按钮：结束，原地保持夹紧</li><li>全流程：第 4 步收臂（保持夹紧）</li><li>语音模块：7.3 收臂</li></ul></div>
@@ -1461,12 +1461,12 @@ main{max-width:900px;margin:0 auto;padding:16px}a{color:var(--hi)}h1{font-size:2
 <li>启动后 __START__ s 没收到相机 / 关节数据：不动作，自动重来一次</li></ul></div>
 </div>
 </main><script>
-const PH={starting:'准备中',reset:'① 复位中',probe:'② 取帧中',policy:'③ VLA 推理执行中',policy_retry:'③ 启动没收到数据，重来一次',stopping:'判定已出，正在停止 VLA',ended:'本次已结束'};
+const PH={starting:'准备中',reset:'① 复位中',probe:'② 取帧中',policy:'③ VLA 推理执行中',policy_retry:'③ 启动没收到数据，重来一次',reopen:'空夹：张开该爪，接着推理',stopping:'判定已出，正在停止 VLA',ended:'本次已结束'};
 async function poll(){
   let L=null,m={};
   try{m=(await (await fetch('/api/v1/state',{cache:'no-store'})).json()).mission||{};L=m.live}catch(e){document.getElementById('nowtext').textContent='读取状态失败';return}
   const run=!!(L&&m.active&&L.phase!=='ended'),ok=L&&L.phase==='stopping'&&(L.note||'').startsWith('抓住');
-  const on=run?{reset:['reset'],probe:['probe'],policy:['policy','judge'],policy_retry:['policy'],stopping:[ok?'success':'fail']}[L.phase]||[]:[];
+  const on=run?{reset:['reset'],probe:['probe'],policy:['policy','judge'],policy_retry:['policy'],reopen:['reopen'],stopping:[ok?'success':'fail']}[L.phase]||[]:[];
   document.querySelectorAll('[data-phase]').forEach(n=>n.classList.toggle('on',on.includes(n.dataset.phase)));
   document.getElementById('now').classList.toggle('live',run);
   document.getElementById('nowtext').textContent=run?'当前：第 '+L.attempt+'/'+L.attempts+' 次 · '+(PH[L.phase]||L.phase)+' · 本次 '+Math.round(L.elapsed_s||0)+' s':
@@ -1479,7 +1479,8 @@ poll();setInterval(poll,700);
 def grasp_flow_page():
     m = mission_module
     vals = {"__OPEN__": m.HOLD_POS_MAX, "__EFF__": m.HOLD_EFF_MAX, "__HR__": round(m.hold_threshold("right"), 4),
-            "__HL__": round(m.hold_threshold("left"), 4), "__START__": 8}
+            "__HL__": round(m.hold_threshold("left"), 4), "__START__": 8, "__EMPTYS__": m.EMPTY_PERSIST,
+            "__CONTS__": m.CONTINUE_MIN_S}
     page = GRASP_FLOW_PAGE.replace("__SVG__", grasp_flow_svg())
     for k, v in vals.items():
         page = page.replace(k, f"{v:g}")
@@ -1607,7 +1608,7 @@ pre{margin:0;padding:16px 22px;font:12px/1.7 -apple-system,"PingFang SC","Micros
     <p class="status-line">当前模型：<strong id="vlamodel">读取中…</strong></p>
     <p><button id="modelsbtn" type="button" class="small" onclick="location.href='/models'">选择 / 切换模型 →</button></p>
     <p id="vlaconfig" class="status-line">读取模型配置中…</p>
-    <button id="vlarun" class="primary" title="与全流程第 3 步完全相同：每次先复位张爪再抓；抓住（夹着并抬高 4 cm 保持 1.5 秒）立即停，原地保持夹紧；空夹后 2 秒内不张开重抓（卡住）、夹着 10 秒不抬或到时 → 下一次；空夹后模型自己张开重抓则继续推理；全部失败回起始姿态" disabled>开始抓取（同全流程第 3 步）</button>
+    <button id="vlarun" class="primary" title="与全流程第 3 步完全相同：每次先复位张爪再抓；抓住（夹着并抬高 4 cm 保持 1.5 秒）立即停，原地保持夹紧；空夹 2 秒 → 只张开该爪、手臂不复位，接着推理（本次剩余时间内）；夹着 10 秒不抬或到时 → 下一次（复位）；全部失败回起始姿态" disabled>开始抓取（同全流程第 3 步）</button>
     <label class="status-line">最多尝试 <select id="vlaattempts"><option value="5">5 次（同全流程）</option><option value="3">3 次</option><option value="1">1 次</option></select> · 每次最多 __ATTEMPT_S__ 秒</label>
     <div id="vla-progress" hidden>
       <div class="progress-row"><span id="vlaelapsed" role="status">已运行 0 / 60 s</span><button id="vlacancel" class="small">停止</button></div>
@@ -1829,7 +1830,7 @@ function renderVoice(m){
 // Grasp attempt internals (mission state "live", same for the big button, step 3 and step 7.2).
 function esc(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 const PHASES=[['reset','复位：回起始姿态、张开夹爪'],['probe','取帧：相机 + 关节'],['policy','VLA 推理执行'],['judge','判定结果']];
-const PHASE_NOW={starting:'准备中',reset:'复位中（回起始姿态、张开夹爪）',probe:'取帧中（相机 + 关节）',policy:'VLA 推理执行中',
+const PHASE_NOW={starting:'准备中',reset:'复位中（回起始姿态、张开夹爪）',probe:'取帧中（相机 + 关节）',policy:'VLA 推理执行中',reopen:'空夹：张开该爪（手臂不动、不复位），接着推理',
   policy_retry:'启动时没收到数据，自动重来一次',stopping:'判定已出，正在停止 VLA',ended:'本次已结束'};
 function handLine(name,h,r,side){
   if(!h)return '<div class="hand"><b>'+name+'</b> 无读数</div>';
@@ -1837,7 +1838,7 @@ function handLine(name,h,r,side){
   let t='<div class="hand"><b>'+name+'</b> 夹爪 '+n(h.pos)+' rad · 力 '+n(h.eff)+' · ';
   if(!h.armed)t+='等待张开（张开前不判定）';
   else if(h.grip==='open')t+='张开，等待合拢';
-  else if(h.grip==='empty')t+='<span class="warn">空夹 '+h.empty_s.toFixed(1)+' / '+r.empty_s+' s → 到时本次失败</span>';
+  else if(h.grip==='empty')t+='<span class="warn">空夹 '+h.empty_s.toFixed(1)+' / '+r.empty_s+' s → 到时张开该爪，接着推理</span>';
   else if(h.grip==='thin'||h.grip==='solid'){
     t+='<span class="good">夹住（'+(h.grip==='solid'?'实体':'薄片')+'）</span> · 抬高 '+(h.lift_cm==null?'–':h.lift_cm.toFixed(1))+' / '+r.lift_cm+' cm';
     t+=h.good_s>0?' · <span class="good">成功计时 '+h.good_s.toFixed(1)+' / '+r.success_s+' s</span>':' · 还没抬够';
@@ -1848,7 +1849,7 @@ function handLine(name,h,r,side){
 }
 function renderLive(el,L,show){
   el.hidden=!(show&&L);if(el.hidden)return;
-  const r=L.rules||{},ended=L.phase==='ended',idx={starting:0,reset:0,probe:1,policy:2,policy_retry:2,stopping:3,ended:3}[L.phase]??0;
+  const r=L.rules||{},ended=L.phase==='ended',idx={starting:0,reset:0,probe:1,policy:2,policy_retry:2,reopen:2,stopping:3,ended:3}[L.phase]??0;
   let h='<div class="gh">抓取内部状态 · 第 '+L.attempt+'/'+L.attempts+' 次 · '+esc(PHASE_NOW[L.phase]||L.phase)+
     ' · 本次 '+(L.elapsed_s||0).toFixed(0)+' / '+r.limit_s+' s</div><div class="gp">';
   PHASES.forEach(([k,label],i)=>{let c=i<idx?'ok':i===idx?'on':'';
@@ -1865,8 +1866,9 @@ function renderHistory(el,m){
   const list=m.attempt_results&&m.attempt_results.length?m.attempt_results:(m.voice&&m.voice.attempt_results)||[];
   if(el.hidden||!list.length)return;
   const d=document.createElement('div');d.className='hist';
-  d.innerHTML='历次尝试：'+list.map(a=>a.result==='succeeded'?'<span class="ok">#'+a.attempt+' ✓ '+(a.hand==='left'?'左手':'右手')+(a.seconds!=null?'（'+a.seconds.toFixed(0)+' s）':'')+'</span>':
-    a.result==='running'?'#'+a.attempt+' …':'<span class="bad">#'+a.attempt+' ✗ '+esc(uiText(a.reason||a.result))+(a.seconds!=null?'（'+a.seconds.toFixed(0)+' s）':'')+'</span>').join('　');
+  const ro=a=>a.reopens?' · 空夹后重抓 '+a.reopens+' 次':'';
+  d.innerHTML='历次尝试：'+list.map(a=>a.result==='succeeded'?'<span class="ok">#'+a.attempt+' ✓ '+(a.hand==='left'?'左手':'右手')+(a.seconds!=null?'（'+a.seconds.toFixed(0)+' s'+ro(a)+'）':'')+'</span>':
+    a.result==='running'?'#'+a.attempt+' …':'<span class="bad">#'+a.attempt+' ✗ '+esc(uiText(a.reason||a.result))+(a.seconds!=null?'（'+a.seconds.toFixed(0)+' s'+ro(a)+'）':'')+'</span>').join('　');
   el.appendChild(d);
 }
 function updateMission(s){

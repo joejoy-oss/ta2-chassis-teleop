@@ -30,6 +30,9 @@ EMPTY_CLOSED = {"right": float(os.environ.get("HOLD_EMPTY_RIGHT", "-0.0485")),
 HOLD_MARGIN = float(os.environ.get("HOLD_MARGIN", "0.01"))     # rad above empty-closed (25x its noise)
 EMPTY_PERSIST = float(os.environ.get("EMPTY_PERSIST", "2.0"))   # s closed on nothing without reopening -> attempt ended
 # (2 s: a policy that reopens to try again restarts the timer; real runs lift the empty gripper instead, 2026-11-16)
+# After an empty close: stop the policy, open that gripper where the arm is (no reset), and run the policy again
+# from there, within what is left of the attempt's ATTEMPT_S; with less than CONTINUE_MIN_S left, the attempt ends.
+CONTINUE_MIN_S = float(os.environ.get("CONTINUE_MIN_S", "5"))
 NO_LIFT_S = float(os.environ.get("NO_LIFT_S", "10"))            # s holding without the lift -> attempt failed
 THIN_SOLID_SPLIT = float(os.environ.get("THIN_SOLID_SPLIT", "0.25"))  # rad; right: thin <= 0.13, solid >= 0.37
 HOLD_POS_MAX = float(os.environ.get("HOLD_POS_MAX", "0.75"))
@@ -266,6 +269,7 @@ class Mission:
         self.detectors = {}
         self.success_hand = None
         self.attempt_fail = None
+        self.empty_side = None
         self.command = None
         self.logfile = None
         self.active_step = None
@@ -323,6 +327,7 @@ class Mission:
                     other = self.detectors.get("left" if side == "right" else "right") or {}
                     if self.detectors[side]["empty"] and not other.get("held"):   # the other hand may still win
                         self.attempt_fail = f"{side} gripper closed on nothing"
+                        self.empty_side = side
                     elif self.detectors[side]["no_lift"]:
                         self.attempt_fail = f"{side} gripper holding but not lifted within {NO_LIFT_S:g} s"
             live = self.state.get("live")
@@ -503,13 +508,15 @@ class Mission:
         live = self.state.get("live")
         if live and live["phase"] != name:
             live.update(phase=name, phase_since=time.time(), note=note if note is not None else live["note"])
+            if name == "policy" and live.get("policy_first") is None:
+                live["policy_first"] = time.time()
 
     def _phase_from(self, line):
         live = self.state.get("live")
         if not live or live["phase"] in ("stopping", "ended"):
             return
         for mark, name in self.PHASE_MARKS:
-            if mark in line and not (name == "probe" and live["phase"] not in ("reset", "starting")):
+            if mark in line and not (name == "probe" and live["phase"] not in ("reset", "starting", "reopen")):
                 self._phase(name)
         if line.startswith("startup: waiting for live data"):
             live["note"] = line.strip()[:160]
@@ -602,18 +609,39 @@ class Mission:
             began = time.time()
             self.state["live"] = {"attempt": i, "attempts": cfg["attempts"], "phase": "starting", "phase_since": began,
                                   "started": began, "ended": None, "note": "", "verdict": None, "hand": None,
-                                  "hands": {}, "elapsed_s": 0, "phase_s": 0,
+                                  "hands": {}, "elapsed_s": 0, "phase_s": 0, "policy_first": None,
                                   "rules": {"limit_s": ATTEMPT_S, "lift_cm": LIFT_MIN * 100, "success_s": HOLD_PERSIST,
-                                            "empty_s": EMPTY_PERSIST, "no_lift_s": NO_LIFT_S,
+                                            "empty_s": EMPTY_PERSIST, "no_lift_s": NO_LIFT_S, "continue_min_s": CONTINUE_MIN_S,
                                             "hold_min": {s: round(hold_threshold(s), 4) for s in SIDES},
                                             "open_above": HOLD_POS_MAX, "effort_max": HOLD_EFF_MAX}}
             results.append(entry)
             self._event("attempt_start", **entry)
             try:
-                rc, hand = self._execute(self.h.VLA_CMD + [tag, str(ATTEMPT_S), "1.0"],
-                                         kind="vla", attempt=True,
-                                         env={**os.environ, "PROMPT": cfg["prompt"], "PORT": str(cfg["port"]), "RESET": "1",
-                                              "RTC": "1" if cfg.get("rtc") else "0"})
+                rc, hand, run, reset = None, None, 0, True
+                while True:
+                    live = self.state["live"]
+                    seconds = ATTEMPT_S if live["policy_first"] is None else ATTEMPT_S - (time.time() - live["policy_first"])
+                    run_tag = tag if run == 0 else f"{tag}c{run}"
+                    self.detecting = False
+                    self.detectors, self.success_hand, self.attempt_fail, self.empty_side = {}, None, None, None
+                    self.detecting = True
+                    rc, hand = self._execute(self.h.VLA_CMD + [run_tag, f"{seconds:.1f}", "1.0"],
+                                             kind="vla", attempt=True,
+                                             env={**os.environ, "PROMPT": cfg["prompt"], "PORT": str(cfg["port"]),
+                                                  "RESET": "1" if reset else "0", "RTC": "1" if cfg.get("rtc") else "0"})
+                    side = self.empty_side
+                    left_s = (ATTEMPT_S - (time.time() - live["policy_first"])) if live["policy_first"] else 0
+                    if hand or not side or left_s < CONTINUE_MIN_S:
+                        break
+                    # Empty close: open that gripper where the arm is (no reset) and keep inferring from there.
+                    run += 1
+                    entry["reopens"] = run
+                    self._event("reopen", attempt=i, hand=side, run=run, left_s=round(left_s, 1))
+                    self._phase("reopen", f"{side} gripper closed on nothing: opening it, continuing from here")
+                    self.detecting = False
+                    self._arm("open_" + side)
+                    live.update(note="")
+                    reset = False
                 reason = None if hand else (self.attempt_fail or ("time limit without a grasp" if rc in (0, None)
                                                                   else f"VLA script exited {rc} without a grasp"))
                 entry.update(result="succeeded" if hand else "failed", hand=hand, returncode=rc, reason=reason)
