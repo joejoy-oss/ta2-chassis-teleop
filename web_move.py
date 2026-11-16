@@ -660,7 +660,12 @@ def run_arm(action, record=None, down=None, move=None):
                 last = line
                 tail.append(line)
         rc = p.wait()
-        state["arm_last"] = f"arms {action}: " + ("done" if rc == 0 else f"stopped ({last})")
+        # arm_pose.py always ends with "FSM paused ...": report the line that says why it stopped instead.
+        why = next((l for l in reversed(tail) if l.startswith(("Aborted", "cannot ", "usage:", "IK container"))
+                    or "refused" in l or "Traceback" in l or "Error" in l), last)
+        state["arm_last"] = f"arms {action}: " + ("done" if rc == 0 else f"stopped ({why})")
+        if rc != 0:
+            note(state["arm_last"])
     except Exception as e:  # noqa: BLE001
         state["arm_last"] = f"arms {action}: error {e}"
         note(state["arm_last"])
@@ -1706,7 +1711,7 @@ function uiText(value){
     ['exited rc=','退出码：'],['time limit without a grasp','到时限仍未抓住'],['all grasp attempts failed; arms reset','全部尝试都未抓住，手臂已复位'],['grasped (left)','已抓住（左手），已停止'],['grasped (right)','已抓住（右手），已停止'],
     ['no grasp (','未抓住，已提前结束（'],['left gripper closed on nothing','左爪空夹'],['without a grasp','，未抓住'],['VLA script exited','VLA 脚本退出码 '],['right gripper closed on nothing','右爪空夹'],
     ['left gripper holding but not lifted within','左爪夹着但未按时抬起：'],['right gripper holding but not lifted within','右爪夹着但未按时抬起：'],['before running the policy (see log)','，策略尚未运行（详见日志）'],
-    ['FSM pause failed rc=','暂停失败，退出码：'],['FSM paused','已暂停'],['E-STOP','急停'],
+    ['FSM pause failed rc=','暂停失败，退出码：'],['Aborted: ','已中止：'],['FSM did not reach READY within','状态机没有进入就绪，已等'],['joint lags its command by','关节跟不上指令，相差'],['possible contact, stopping','可能碰到东西，已停止'],['goto refused: a joint would change','拒绝执行：某个关节要转动'],['arm joint feedback stalled','手臂关节数据中断'],['no fresh /','没有最新数据：/'],['FSM paused','已暂停'],['E-STOP','急停'],
     ['time_limit','达到时限'],['path done','路径已完成'],['corner pause','转角停留'],[' done, pausing ',' 已完成，停留 '],[' s before ',' 秒后开始 '],['run all: ','全部运行：'],['heartbeat timeout','心跳超时'],
     ['dead-man timeout','心跳超时'],['step done','点按移动已完成'],['hold timeout','长按已达时限'],
     ['page closed or connection lost','页面已关闭或连接中断'],['wheel feedback lost','轮速反馈中断'],
